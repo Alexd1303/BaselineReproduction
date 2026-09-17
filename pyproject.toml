@@ -1,0 +1,31 @@
+[project]
+name = "baselinereproduction"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "einops>=0.8.2",
+    "ipykernel>=7.3.0",
+    "matplotlib>=3.11.1",
+    "opencv-python>=5.0.0.93",
+    "pandas>=3.0.5",
+    "prettytable>=3.18.0",
+    "python-dotenv>=1.2.3",
+    "pytorchtools>=0.0.2",
+    "torch>=2.11.0",
+    "torchvision>=0.26.0",
+]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+torchvision = [
+  { index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true

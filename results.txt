@@ -1,0 +1,2 @@
+Architecture as is (50 epochs, 6 batch size): total_acc1: 70.771759, total_acc2: 71.428574, total_acc3: 86.535301, total_acc4: 78.653534, mAcc: 76.84
+Full MARNet (50 epochs, 6 batch size): total_acc1: 69.950737, total_acc2: 69.786537, total_acc3: 86.371101, total_acc4: 79.967163 mAcc: 76.52
