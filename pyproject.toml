@@ -15,6 +15,7 @@ dependencies = [
     "pytorchtools>=0.0.2",
     "torch>=2.11.0",
     "torchvision>=0.26.0",
+    "tqdm>=4.70.1",
 ]
 
 [tool.uv.sources]
