@@ -12,8 +12,17 @@ from Data import CarDataset
 from BaselineNet import BaselineNet
 
 from tqdm import tqdm
+import cv2
+
+def silent_error_handler(status, func_name, err_msg, file_name, line):
+    pass
+
+cv2.redirectError(silent_error_handler)
 
 def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: ReduceLROnPlateau, train_dataset: CarDataset, val_dataset: CarDataset, checkpoints_dir: Path, name: str,start_epoch: int=0, num_epochs: int=10, batch_size: int=24, device: torch.device = torch.device("cpu")):
+    
+    checkpoints_dir = checkpoints_dir / name
+    checkpoints_dir.mkdir(parents=True, exist_ok=True)
     
     accuracy1 = Accuracy(task="multiclass", num_classes=5).to(device)
     accuracy2 = Accuracy(task="multiclass", num_classes=7).to(device)
@@ -31,7 +40,7 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: ReduceL
     
     for epoch in range(start_epoch, num_epochs):
         model.train()
-        for img1,img2,img3,img4,face,body, posture, gesture,emotion_label, behavior_label, context_label, vehicle_label in tqdm(train_loader, desc=f"Epoch {epoch + 1}/{num_epochs}"):
+        for img1,img2,img3,img4,face,body, posture, gesture,emotion_label, behavior_label, context_label, vehicle_label in tqdm(train_loader, desc=f"Training"):
             img1 = img1.view(-1, 48, 224, 224).to(device, non_blocking=True)
             img2 = img2.view(-1, 48, 224, 224).to(device, non_blocking=True)
             img3 = img3.view(-1, 48, 224, 224).to(device, non_blocking=True)
@@ -114,7 +123,7 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: ReduceL
         scheduler.step(sum(val_mLoss) / len(val_mLoss))
 
         # Save checkpoint
-        checkpoint_path = checkpoints_dir / f"{name}_epoch_{epoch}.pt"
+        checkpoint_path = checkpoints_dir / f"{name}_{epoch % 2}.pt"
         torch.save({
             'state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
@@ -129,6 +138,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoints_dir", type=Path, default="./checkpoints", help="Path to the checkpoints directory")
     parser.add_argument("--dataset_dir", type=Path, required=True, help="Path to the dataset directory")
     parser.add_argument("--split_dir", type=Path, required=True, help="Path to the split directory")
+    parser.add_argument("--model_name", type=str, required=True, help="Name of the model to be used")
     parser.add_argument("--num_epochs", type=int, default=10, help="Number of epochs to train")
     parser.add_argument("--batch_size", type=int, default=4, help="Batch size for training")
     parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate for the optimizer")
@@ -159,8 +169,13 @@ if __name__ == "__main__":
         model.load_state_dict(checkpoint['state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+        for state in optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
         start_epoch = checkpoint['epoch'] + 1
     else:
         start_epoch = 0
         
-    train(model, optimizer, scheduler, train_dataset, val_dataset, args.checkpoints_dir, name="MARNetOnly", start_epoch=0, num_epochs=args.num_epochs, batch_size=args.batch_size, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+    train(model, optimizer, scheduler, train_dataset, val_dataset, args.checkpoints_dir, name=args.model_name, start_epoch=start_epoch, num_epochs=args.num_epochs, batch_size=args.batch_size, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))

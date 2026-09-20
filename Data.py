@@ -14,6 +14,9 @@ from torchvision.transforms import v2
 from tqdm import tqdm
 import albumentations as A
 
+os.environ['OPENCV_LOG_LEVEL'] = 'OFF'
+os.environ['OPENCV_FFMPEG_LOGLEVEL'] = "-8"
+
 EMOTION_LABEL = ['Anxiety', 'Peace', 'Weariness', 'Happiness', 'Anger']
 DRIVER_BEHAVIOR_LABEL = ['Smoking', 'Making Phone', 'Looking Around', 'Dozing Off', 'Normal Driving', 'Talking', 'Body Movement']
 SCENE_CENTRIC_CONTEXT_LABEL = ['Traffic Jam', 'Waiting', 'Smooth Traffic']

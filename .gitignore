@@ -17,3 +17,7 @@ wheels/
 
 checkpoint/
 dataset_test/
+
+dataset_checker.py
+results.txt
+terminal_output.txt

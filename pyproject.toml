@@ -14,6 +14,7 @@ dependencies = [
     "prettytable>=3.18.0",
     "python-dotenv>=1.2.3",
     "pytorchtools>=0.0.2",
+    "pywinpty>=3.0.5",
     "torch>=2.11.0",
     "torchmetrics>=1.9.0",
     "torchvision>=0.26.0",
