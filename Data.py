@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import cv2
 import numpy as np
 import pandas as pd
@@ -19,7 +21,7 @@ VEHICLE_BASED_CONTEXT_LABEL = ['Parking', 'Turning', 'Backward Moving', 'Changin
 
 class CarDataset(Dataset):
 
-    def __init__(self, csv_file: str, dataset_root: str, device: torch.device, horizontal_flip_prob: float = 0.5, vertical_flip_prob: float = 0.5):
+    def __init__(self, csv_file: str, dataset_root: str, device: torch.device = torch.device("cpu"), horizontal_flip_prob: float = 0.5, vertical_flip_prob: float = 0.5):
         """
         Args:
             csv_file (str): Path to the CSV file containing the dataset information.
@@ -28,14 +30,15 @@ class CarDataset(Dataset):
             horizontal_flip_prob (float): Probability of applying horizontal flip augmentation.
             vertical_flip_prob (float): Probability of applying vertical flip augmentation.
         """
-        self.path = pd.read_csv(csv_file).astype(str).rename(columns={0: 'frames', 1: 'label'}).copy()
+        self.path = pd.read_csv(csv_file).astype(str).rename(columns={'0': 'frames', '1': 'label'}).copy()
+        assert os.path.exists(dataset_root), f"Dataset root directory {dataset_root} does not exist."
         self.dataset_root = dataset_root
         self.resize_height = 224
         self.resize_width = 224
-        self.body_height = 112
-        self.body_width = 112
-        self.face_height = 64
-        self.face_width = 64
+        self.body_height = 224 #112
+        self.body_width = 224 #112
+        self.face_height = 224 #64
+        self.face_width = 224 #64
 
         self.device = device
 
@@ -70,9 +73,9 @@ class CarDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        frames_path, label_path = self.path.iloc[idx]
-        frames_path = self.dataset_root + "/" + frames_path
-        label_path = self.dataset_root + "/" + label_path
+        frames_path, label_path = str(self.path.iloc[idx]['frames']), str(self.path.iloc[idx]['label'])
+        frames_path = self.dataset_root / frames_path
+        label_path = self.dataset_root / label_path
 
         label_json = json.load(open(label_path))
         pose_list = label_json['pose_list']
@@ -136,6 +139,13 @@ class CarDataset(Dataset):
             right_img = cv2.imread(right_frames[i])
             img_face = cv2.imread(face_frames[i])
             img_body = cv2.imread(body_frames[i])
+            
+            assert img is not None, f"Image is None for frame {i} in {frame_name}"
+            assert front_img is not None, f"Front image is None for frame {i} in {front_frames[i]}"
+            assert left_img is not None, f"Left image is None for frame {i} in {left_frames[i]}"
+            assert right_img is not None, f"Right image is None for frame {i} in {right_frames[i]}"
+            assert img_face is not None, f"Face image is None for frame {i} in {face_frames[i]}"
+            assert img_body is not None, f"Body image is None for frame {i} in {body_frames[i]}"
 
             keypoints = np.array(pose_list[i]['result'][0]['keypoints']).reshape(-1, 3)          
             posture =  keypoints[:26]
@@ -170,17 +180,17 @@ class CarDataset(Dataset):
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = "cpu"  # For testing on CPU, change to "cuda" for GPU
-    dataset = CarDataset(csv_file=r"F:/Stage Project/AIDE_dataset/training.csv", dataset_root=r"F:/Stage Project/AIDE_dataset", device=device)
-    test_dataloader = DataLoader(dataset, batch_size=12, shuffle=False, num_workers=6, pin_memory=True, drop_last=False)
+    device = torch.device("cpu")  # For testing on CPU, change to "cuda" for GPU
+    dataset = CarDataset(csv_file=Path(r"F:/Stage Project/AIDE_dataset/training.csv"), dataset_root=Path(r"F:/Stage Project/AIDE_dataset"), device=device, horizontal_flip_prob=0.0, vertical_flip_prob=0.0)
+    test_dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=6, pin_memory=True, drop_last=False)
 
     for epoch, (img1,img2,img3,img4,face,body,posture, gesture,emotion_label, behavior_label, context_label, vehicle_label) in enumerate(tqdm(test_dataloader)):
-        #print(f"Subepoch: {epoch}, img1 shape: {img1.shape}, img2 shape: {img2.shape}, img3 shape: {img3.shape}, img4 shape: {img4.shape}, face shape: {face.shape}, body shape: {body.shape}, posture shape: {posture.shape}, gesture shape: {gesture.shape}, emotion_label: {emotion_label}, behavior_label: {behavior_label}, context_label: {context_label}, vehicle_label: {vehicle_label}")
-        #cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img1_{epoch}.jpg", img1[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
-        #cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img2_{epoch}.jpg", img2[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
-        #cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img3_{epoch}.jpg", img3[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
-        #cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img4_{epoch}.jpg", img4[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
-        #cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/face_{epoch}.jpg", face[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
-        #cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/body_{epoch}.jpg", body[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
-        #if epoch == 10: break
-        pass
+        print(f"Subepoch: {epoch}, img1 shape: {img1.shape}, img2 shape: {img2.shape}, img3 shape: {img3.shape}, img4 shape: {img4.shape}, face shape: {face.shape}, body shape: {body.shape}, posture shape: {posture.shape}, gesture shape: {gesture.shape}, emotion_label: {emotion_label}, behavior_label: {behavior_label}, context_label: {context_label}, vehicle_label: {vehicle_label}")
+        cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img1_{epoch}.jpg", img1[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
+        cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img2_{epoch}.jpg", img2[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
+        cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img3_{epoch}.jpg", img3[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
+        cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img4_{epoch}.jpg", img4[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
+        cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/face_{epoch}.jpg", face[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
+        cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/body_{epoch}.jpg", body[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
+        if epoch == 10: break
+        #pass
