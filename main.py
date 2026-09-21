@@ -12,12 +12,8 @@ from Data import CarDataset
 from BaselineNet import BaselineNet
 
 from tqdm import tqdm
-import cv2
 
-def silent_error_handler(status, func_name, err_msg, file_name, line):
-    pass
-
-cv2.redirectError(silent_error_handler)
+from Utils import Checkpoint
 
 def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: ReduceLROnPlateau, train_dataset: CarDataset, val_dataset: CarDataset, checkpoints_dir: Path, name: str,start_epoch: int=0, num_epochs: int=10, batch_size: int=24, device: torch.device = torch.device("cpu")):
     
@@ -115,22 +111,31 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: ReduceL
                 pass
             
         print(f"Validation - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {(accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4:.4f}")
-        accuracy1.reset()
-        accuracy2.reset()
-        accuracy3.reset()
-        accuracy4.reset()
         
         scheduler.step(sum(val_mLoss) / len(val_mLoss))
 
         # Save checkpoint
         checkpoint_path = checkpoints_dir / f"{name}_{epoch % 2}.pt"
-        torch.save({
-            'state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'scheduler_state_dict': scheduler.state_dict(),
-            'epoch': epoch,
-            }, checkpoint_path)
+        
+        checkpoint = Checkpoint()
+        checkpoint.state_dict = model.state_dict()
+        checkpoint.optimizer_state_dict = optimizer.state_dict()
+        checkpoint.scheduler_state_dict = scheduler.state_dict()
+        checkpoint.epoch = epoch
+        checkpoint.name = name
+        checkpoint.val_accuracy1 = accuracy1.compute().item()
+        checkpoint.val_accuracy2 = accuracy2.compute().item()
+        checkpoint.val_accuracy3 = accuracy3.compute().item()
+        checkpoint.val_accuracy4 = accuracy4.compute().item()
+        checkpoint.val_mLoss = sum(val_mLoss) / len(val_mLoss)
+
+        torch.save(checkpoint.asdict(), checkpoint_path)
         print(f"Checkpoint saved at {checkpoint_path}")
+        
+        accuracy1.reset()
+        accuracy2.reset()
+        accuracy3.reset()
+        accuracy4.reset()
 
 
 if __name__ == "__main__":
