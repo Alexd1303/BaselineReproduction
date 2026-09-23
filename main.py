@@ -92,8 +92,12 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: ReduceL
                     img4 = img4.view(-1, 48, 224, 224).to(device, non_blocking=True)
                     face = face.view(-1, 48, 224, 224).to(device, non_blocking=True)
                     body = body.view(-1, 48, 224, 224).to(device, non_blocking=True)
-                    gesture = gesture.view(batch_size, 3, 16, 42, 1).to(device, non_blocking=True)
-                    posture = posture.view(batch_size, 3, 16, 26, 1).to(device, non_blocking=True)
+                    
+                    #gesture = gesture.view(batch_size, 3, 16, 42, 1).to(device, non_blocking=True)
+                    #posture = posture.view(batch_size, 3, 16, 26, 1).to(device, non_blocking=True)
+                    gesture = gesture.permute(0, 3, 1, 2).unsqueeze(-1).contiguous().to(device, non_blocking=True)
+                    posture = posture.permute(0, 3, 1, 2).unsqueeze(-1).contiguous().to(device, non_blocking=True)
+                    
                     emotion_label = emotion_label.to(device, non_blocking=True)
                     behavior_label = behavior_label.to(device, non_blocking=True)
                     context_label = context_label.to(device, non_blocking=True)

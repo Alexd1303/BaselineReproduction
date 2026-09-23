@@ -73,6 +73,23 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     with torch.no_grad():
+        gestureCnn = ConvNet3D(num_keypoints=42).to(device).eval()
+        postureCnn = ConvNet3D(num_keypoints=26).to(device).eval()
+        
+        gesture = torch.randn(24, 16, 42, 3).to(device)
+        posture = torch.randn(24, 16, 26, 3).to(device)
+        
+        gesture = gesture.permute(0, 3, 1, 2).unsqueeze(-1).contiguous().to(device)
+        posture = posture.permute(0, 3, 1, 2).unsqueeze(-1).contiguous().to(device)
+        
+        gesture_output = gestureCnn(gesture)
+        posture_output = postureCnn(posture)
+        
+        print("Gesture output shape:", gesture_output.shape)
+        print("Posture output shape:", posture_output.shape)
+        
+        exit(0)
+
         model = BaselineNet().to(device).eval()
         img1 = torch.randn(24, 48, 224, 224).to(device)
         img2 = torch.randn(24, 48, 224, 224).to(device)
