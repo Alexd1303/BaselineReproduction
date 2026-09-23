@@ -8,7 +8,6 @@ import json
 
 import torch
 from torch.utils.data import DataLoader, Dataset
-from torchvision.transforms import v2
 
 
 from tqdm import tqdm
@@ -44,29 +43,40 @@ class CarDataset(Dataset):
         self.face_width = 224 #64
 
         self.device = device
-
-        self.transform = A.Compose([
+        
+        self.resize_imgs = A.Compose([
             A.Resize(height=self.resize_height, width=self.resize_width),
-            A.HorizontalFlip(p=horizontal_flip_prob),
-            A.VerticalFlip(p=vertical_flip_prob),
             A.ToFloat(),
             A.pytorch.ToTensorV2(),
+            
+        ])
+        self.resize_body = A.Compose([
+            A.Resize(height=self.body_height, width=self.body_width),
+            A.ToFloat(),
+            A.pytorch.ToTensorV2(),
+            
+        ])
+        self.resize_face = A.Compose([
+            A.Resize(height=self.face_height, width=self.face_width),
+            A.ToFloat(),
+            A.pytorch.ToTensorV2(),
+        ])
+
+        self.transform = A.Compose([
+            A.HorizontalFlip(p=horizontal_flip_prob),
+            A.VerticalFlip(p=vertical_flip_prob),
+            #A.ToFloat(),
+            #A.pytorch.ToTensorV2(),
         ])
 
         self.body_transform = A.Compose([
-            A.Resize(height=self.body_height, width=self.body_width),
-            A.HorizontalFlip(p=horizontal_flip_prob),
-            A.VerticalFlip(p=vertical_flip_prob),
-            A.ToFloat(),
-            A.pytorch.ToTensorV2(),
+            #A.ToFloat(),
+            #A.pytorch.ToTensorV2(),
         ])
 
         self.face_transform = A.Compose([
-            A.Resize(height=self.face_height, width=self.face_width),
-            A.HorizontalFlip(p=horizontal_flip_prob),
-            A.VerticalFlip(p=vertical_flip_prob),
-            A.ToFloat(),
-            A.pytorch.ToTensorV2(),
+            #A.ToFloat(),
+            #A.pytorch.ToTensorV2(),
         ])
 
     def __len__(self):
@@ -85,13 +95,13 @@ class CarDataset(Dataset):
 
         buffer, buffer_front, buffer_left, buffer_right, buffer_face, buffer_body, posture, gesture = self.load_frames(frames_path, pose_list)
 
-        buffer = buffer.to(self.device, dtype=torch.float32, non_blocking=True)
-        buffer_front = buffer_front.to(self.device, dtype=torch.float32, non_blocking=True)
-        buffer_left = buffer_left.to(self.device, dtype=torch.float32, non_blocking=True)
-        buffer_right = buffer_right.to(self.device, dtype=torch.float32, non_blocking=True)
+        buffer = self.transform(images=buffer)['images'].to(self.device, dtype=torch.float32, non_blocking=True)
+        buffer_front = self.transform(images=buffer_front)['images'].to(self.device, dtype=torch.float32, non_blocking=True)
+        buffer_left =  self.transform(images=buffer_left)['images'].to(self.device, dtype=torch.float32, non_blocking=True)
+        buffer_right = self.transform(images=buffer_right)['images'].to(self.device, dtype=torch.float32, non_blocking=True)
 
-        buffer_body = buffer_body.to(self.device, dtype=torch.float32, non_blocking=True)
-        buffer_face = buffer_face.to(self.device, dtype=torch.float32, non_blocking=True)
+        buffer_body = self.body_transform(images=buffer_body)['images'].to(self.device, dtype=torch.float32, non_blocking=True)
+        buffer_face = self.face_transform(images=buffer_face)['images'].to(self.device, dtype=torch.float32, non_blocking=True)
 
         emotion_label = EMOTION_LABEL.index((label_json['emotion_label'].capitalize()))
         behavior_label = DRIVER_BEHAVIOR_LABEL.index((label_json['driver_behavior_label']))
@@ -159,12 +169,12 @@ class CarDataset(Dataset):
             if img_face is None:
                 img_face = img_body.copy()
 
-            img = self.transform(image=img)['image']
-            front_img = self.transform(image=front_img)['image']
-            left_img = self.transform(image=left_img)['image']
-            right_img = self.transform(image=right_img)['image']
-            img_body = self.body_transform(image=img_body)['image']
-            img_face = self.face_transform(image=img_face)['image']
+            img = self.resize_imgs(image=img)['image']
+            front_img = self.resize_imgs(image=front_img)['image']
+            left_img = self.resize_imgs(image=left_img)['image']
+            right_img = self.resize_imgs(image=right_img)['image']
+            img_body = self.resize_body(image=img_body)['image']
+            img_face = self.resize_face(image=img_face)['image']
 
             buffer.append(img)
             buffer_front.append(front_img)
@@ -184,16 +194,18 @@ class CarDataset(Dataset):
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device = torch.device("cpu")  # For testing on CPU, change to "cuda" for GPU
-    dataset = CarDataset(csv_file=Path(r"F:/Stage Project/AIDE_dataset/training.csv"), dataset_root=Path(r"F:/Stage Project/AIDE_dataset"), device=device, horizontal_flip_prob=0.0, vertical_flip_prob=0.0)
-    test_dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=6, pin_memory=True, drop_last=False)
+    dataset = CarDataset(csv_file=Path(r"F:/Stage Project/AIDE_dataset/training.csv"), dataset_root=Path(r"F:/Stage Project/AIDE_dataset"), device=device, horizontal_flip_prob=0.8, vertical_flip_prob=0.8)
+    test_dataloader = DataLoader(dataset, batch_size=6, shuffle=False, num_workers=6, pin_memory=True, drop_last=False)
 
     for epoch, (img1,img2,img3,img4,face,body,posture, gesture,emotion_label, behavior_label, context_label, vehicle_label) in enumerate(tqdm(test_dataloader)):
-        print(f"Subepoch: {epoch}, img1 shape: {img1.shape}, img2 shape: {img2.shape}, img3 shape: {img3.shape}, img4 shape: {img4.shape}, face shape: {face.shape}, body shape: {body.shape}, posture shape: {posture.shape}, gesture shape: {gesture.shape}, emotion_label: {emotion_label}, behavior_label: {behavior_label}, context_label: {context_label}, vehicle_label: {vehicle_label}")
-        cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img1_{epoch}.jpg", img1[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
-        cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img2_{epoch}.jpg", img2[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
-        cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img3_{epoch}.jpg", img3[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
-        cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img4_{epoch}.jpg", img4[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
-        cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/face_{epoch}.jpg", face[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
-        cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/body_{epoch}.jpg", body[0, 0, :, :, :].permute(1, 2, 0).numpy() * 255)
-        if epoch == 10: break
-        #pass
+        #print(f"Subepoch: {epoch}, img1 shape: {img1.shape}, img2 shape: {img2.shape}, img3 shape: {img3.shape}, img4 shape: {img4.shape}, face shape: {face.shape}, body shape: {body.shape}, posture shape: {posture.shape}, gesture shape: {gesture.shape}, emotion_label: {emotion_label}, behavior_label: {behavior_label}, context_label: {context_label}, vehicle_label: {vehicle_label}")
+        #for frame_n in range(img1.shape[1]):
+        #    cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img1_{epoch}_{frame_n}.jpg", img1[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
+        #    cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img2_{epoch}_{frame_n}.jpg", img2[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
+        #    cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img3_{epoch}_{frame_n}.jpg", img3[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
+        #    cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img4_{epoch}_{frame_n}.jpg", img4[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
+        #    cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/face_{epoch}_{frame_n}.jpg", face[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
+        #    cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/body_{epoch}_{frame_n}.jpg", body[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
+        #    
+        #if epoch == 10: break
+        pass
