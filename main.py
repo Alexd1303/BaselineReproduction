@@ -10,6 +10,7 @@ from tqdm import tqdm
 
 from Data import CarDataset
 from BaselineNet import BaselineNet
+from Fusion import DBMEFusion
 
 from Utils import Checkpoint
 
@@ -29,8 +30,8 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: ReduceL
         best_checkpoint.load_from_file(checkpoints_dir / f"{name}_best.pt")
         best_val_mAcc = best_checkpoint.val_mAcc if best_checkpoint.val_mAcc is not None else 0.0
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=6, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=6, pin_memory=True)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=6, pin_memory=True, persistent_workers=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=6, pin_memory=True, persistent_workers=True)
     
     model.to(device)
     lossDER = nn.CrossEntropyLoss()
@@ -47,8 +48,10 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: ReduceL
             img4 = img4.view(-1, 48, 224, 224).to(device, non_blocking=True)
             face = face.view(-1, 48, 224, 224).to(device, non_blocking=True)
             body = body.view(-1, 48, 224, 224).to(device, non_blocking=True)
-            gesture = gesture.view(batch_size, 3, 16, 42, 1).to(device, non_blocking=True)
-            posture = posture.view(batch_size, 3, 16, 26, 1).to(device, non_blocking=True)
+            #gesture = gesture.view(batch_size, 3, 16, 42, 1).to(device, non_blocking=True)
+            #posture = posture.view(batch_size, 3, 16, 26, 1).to(device, non_blocking=True)
+            gesture = gesture.permute(0, 3, 1, 2).unsqueeze(-1).contiguous().to(device, non_blocking=True)
+            posture = posture.permute(0, 3, 1, 2).unsqueeze(-1).contiguous().to(device, non_blocking=True)
             emotion_label = emotion_label.to(device, non_blocking=True)
             behavior_label = behavior_label.to(device, non_blocking=True)
             context_label = context_label.to(device, non_blocking=True)
@@ -159,7 +162,7 @@ def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name
     checkpoints_dir = checkpoints_dir / name
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
     
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=6, pin_memory=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=6, pin_memory=True, persistent_workers=True)
     
     accuracy1 = Accuracy(task="multiclass", num_classes=5).to(device)
     accuracy2 = Accuracy(task="multiclass", num_classes=7).to(device)
@@ -177,14 +180,16 @@ def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name
             img4 = img4.view(-1, 48, 224, 224).to(device, non_blocking=True)
             face = face.view(-1, 48, 224, 224).to(device, non_blocking=True)
             body = body.view(-1, 48, 224, 224).to(device, non_blocking=True)
-            gesture = gesture.view(batch_size, 3, 16, 42, 1).to(device, non_blocking=True)
-            posture = posture.view(batch_size, 3, 16, 26, 1).to(device, non_blocking=True)
+            #gesture = gesture.view(batch_size, 3, 16, 42, 1).to(device, non_blocking=True)
+            #posture = posture.view(batch_size, 3, 16, 26, 1).to(device, non_blocking=True)
+            gesture = gesture.permute(0, 3, 1, 2).unsqueeze(-1).contiguous().to(device, non_blocking=True)
+            posture = posture.permute(0, 3, 1, 2).unsqueeze(-1).contiguous().to(device, non_blocking=True)
             emotion_label = emotion_label.to(device, non_blocking=True)
             behavior_label = behavior_label.to(device, non_blocking=True)
             context_label = context_label.to(device, non_blocking=True)
             vehicle_label = vehicle_label.to(device, non_blocking=True)
 
-            out1_test , out2_test , out3_test , out4_test = model(img1,img2,img3,img4 ,face ,body , gesture ,posture)
+            out1_test , out2_test , out3_test , out4_test = model(img1, img2, img3, img4 ,face ,body , gesture ,posture)
             
             accuracy1.update(out1_test, emotion_label)
             accuracy2.update(out2_test, behavior_label)

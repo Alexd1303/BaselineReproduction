@@ -87,8 +87,7 @@ if __name__ == "__main__":
         
         print("Gesture output shape:", gesture_output.shape)
         print("Posture output shape:", posture_output.shape)
-        
-        exit(0)
+
 
         model = BaselineNet().to(device).eval()
         img1 = torch.randn(24, 48, 224, 224).to(device)
