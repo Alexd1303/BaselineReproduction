@@ -14,7 +14,7 @@ from Fusion import DBMEFusion
 
 from Utils import Checkpoint
 
-def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: ReduceLROnPlateau, train_dataset: CarDataset, val_dataset: CarDataset, checkpoints_dir: Path, name: str,start_epoch: int=0, num_epochs: int=10, batch_size: int=24, device: torch.device = torch.device("cpu")):
+def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: ReduceLROnPlateau, train_dataset: CarDataset, val_dataset: CarDataset, checkpoints_dir: Path, name: str,start_epoch: int=0, num_epochs: int=10, batch_size: int=24, device: torch.device = torch.device("cpu"), num_workers: int=4):
     
     checkpoints_dir = checkpoints_dir / name
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
@@ -30,8 +30,8 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: ReduceL
         best_checkpoint.load_from_file(checkpoints_dir / f"{name}_best.pt")
         best_val_mAcc = best_checkpoint.val_mAcc if best_checkpoint.val_mAcc is not None else 0.0
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=6, pin_memory=True, persistent_workers=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=6, pin_memory=True, persistent_workers=True)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True, persistent_workers=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, persistent_workers=True)
     
     model.to(device)
     lossDER = nn.CrossEntropyLoss()
@@ -157,12 +157,12 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: ReduceL
         accuracy3.reset()
         accuracy4.reset()
 
-def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name: str, batch_size: int=24, device: torch.device = torch.device("cpu")):
+def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name: str, batch_size: int=24, device: torch.device = torch.device("cpu"), num_workers: int=4):
     
     checkpoints_dir = checkpoints_dir / name
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
     
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=6, pin_memory=True, persistent_workers=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, persistent_workers=True)
     
     accuracy1 = Accuracy(task="multiclass", num_classes=5).to(device)
     accuracy2 = Accuracy(task="multiclass", num_classes=7).to(device)
@@ -214,6 +214,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=4, help="Batch size for training")
     parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate for the optimizer")
     parser.add_argument("--start_from_checkpoint", type=Path, default=None, help="Path to a checkpoint to resume training from")
+    parser.add_argument("--num_workers", type=int, default=4, help="Number of workers for data loading")
 
     args = parser.parse_args()
 
@@ -255,7 +256,7 @@ if __name__ == "__main__":
     else:
         start_epoch = 0
         
-    train(model, optimizer, scheduler, train_dataset, val_dataset, args.checkpoints_dir, name=args.model_name, start_epoch=start_epoch, num_epochs=args.num_epochs, batch_size=args.batch_size, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+    train(model, optimizer, scheduler, train_dataset, val_dataset, args.checkpoints_dir, name=args.model_name, start_epoch=start_epoch, num_epochs=args.num_epochs, batch_size=args.batch_size, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), num_workers=args.num_workers)
     
     test_dataset = CarDataset(csv_file=args.split_dir / "testing.csv", dataset_root=args.dataset_dir, horizontal_flip_prob=0.0, vertical_flip_prob=0.0)
     
@@ -269,4 +270,4 @@ if __name__ == "__main__":
     
     model.load_state_dict(best_checkpoint.state_dict)
     
-    test(model, test_dataset, args.checkpoints_dir, name=args.model_name, batch_size=1, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+    test(model, test_dataset, args.checkpoints_dir, name=args.model_name, batch_size=1, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), num_workers=args.num_workers)
