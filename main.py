@@ -205,6 +205,7 @@ def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--model_type", type=str, choices=["MARNetOnly", "fusion"], required=True, help="Type of model to train: 'baseline' or 'fusion'")
     parser.add_argument("--checkpoints_dir", type=Path, default="./checkpoints", help="Path to the checkpoints directory")
     parser.add_argument("--dataset_dir", type=Path, required=True, help="Path to the dataset directory")
     parser.add_argument("--split_dir", type=Path, required=True, help="Path to the split directory")
@@ -230,7 +231,13 @@ if __name__ == "__main__":
     train_dataset = CarDataset(csv_file=args.split_dir / "training.csv", dataset_root=args.dataset_dir, horizontal_flip_prob=0.5, vertical_flip_prob=0.5)
     val_dataset = CarDataset(csv_file=args.split_dir / "validation.csv", dataset_root=args.dataset_dir, horizontal_flip_prob=0.0, vertical_flip_prob=0.0)
     
-    model = BaselineNet()
+    if args.model_type == "MARNetOnly":
+        model = BaselineNet()
+    elif args.model_type == "fusion":
+        model = DBMEFusion()
+    else:
+        raise ValueError("Invalid model type. Please choose 'baseline' or 'fusion'.")
+
     optimizer = SGD(model.parameters(), lr=args.learning_rate, momentum=0.9)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5)
     
