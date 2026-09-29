@@ -12,36 +12,46 @@ class VGG(torch.nn.Module):
         
         self.convBlock1 = torch.nn.Sequential(
             torch.nn.Conv2d(in_channels=in_channels, out_channels=64, kernel_size=3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(64),
             torch.nn.ReLU(),
             torch.nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(64),
             torch.nn.ReLU(),
             torch.nn.MaxPool2d(kernel_size=2, stride=2)
         )
         
         self.convBlock2 = torch.nn.Sequential(
             torch.nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(128),
             torch.nn.ReLU(),
             torch.nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(128),
             torch.nn.ReLU(),
             torch.nn.MaxPool2d(kernel_size=2, stride=2)
         )
         
         self.convBlock3 = torch.nn.Sequential(
             torch.nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(256),
             torch.nn.ReLU(),
             torch.nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(256),
             torch.nn.ReLU(),
             torch.nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(256),
             torch.nn.ReLU(),
             torch.nn.MaxPool2d(kernel_size=2, stride=2)
         )
         
         self.convBlock4 = torch.nn.Sequential(
             torch.nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(512),
             torch.nn.ReLU(),
             torch.nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(512),
             torch.nn.ReLU(),
             torch.nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, stride=1, padding=1),
+            torch.nn.BatchNorm2d(512),
             torch.nn.ReLU(),
             torch.nn.MaxPool2d(kernel_size=2, stride=2)
         )
@@ -66,6 +76,8 @@ class TaskSpecificBranch(nn.Module):
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
+        
+        #NOTE: Batch norm here too?
 
         self.conv_q = nn.Conv1d(embed_dim, embed_dim, kernel_size=3, padding=1)
         self.conv_k = nn.Conv1d(embed_dim, embed_dim, kernel_size=3, padding=1)

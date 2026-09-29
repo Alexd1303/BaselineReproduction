@@ -215,6 +215,8 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate for the optimizer")
     parser.add_argument("--start_from_checkpoint", type=Path, default=None, help="Path to a checkpoint to resume training from")
     parser.add_argument("--num_workers", type=int, default=4, help="Number of workers for data loading")
+    parser.add_argument("--lr_drop_factor", type=float, default=0.1, help="Factor by which the learning rate will be reduced")
+    parser.add_argument("--lr_drop_patience", type=int, default=5, help="Number of epochs with no improvement after which learning rate will be reduced")
 
     args = parser.parse_args()
 
@@ -240,7 +242,7 @@ if __name__ == "__main__":
         raise ValueError("Invalid model type. Please choose 'baseline' or 'fusion'.")
 
     optimizer = SGD(model.parameters(), lr=args.learning_rate, momentum=0.9)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=args.lr_drop_factor, patience=args.lr_drop_patience)
     
     if args.start_from_checkpoint is not None:
         checkpoint = torch.load(args.start_from_checkpoint)

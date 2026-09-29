@@ -23,3 +23,7 @@ results.txt
 terminal_output.txt
 
 slurm_scripts/
+
+job_logs/
+
+*.slurm
