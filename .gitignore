@@ -16,6 +16,7 @@ wheels/
 .env
 
 checkpoint/
+checkpoints/
 dataset_test/
 
 dataset_checker.py

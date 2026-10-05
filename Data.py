@@ -95,13 +95,13 @@ class CarDataset(Dataset):
 
         buffer, buffer_front, buffer_left, buffer_right, buffer_face, buffer_body, posture, gesture = self.load_frames(frames_path, pose_list)
 
-        buffer = self.transform(images=buffer)['images'].to(self.device, dtype=torch.float32, non_blocking=True)
-        buffer_front = self.transform(images=buffer_front)['images'].to(self.device, dtype=torch.float32, non_blocking=True)
-        buffer_left =  self.transform(images=buffer_left)['images'].to(self.device, dtype=torch.float32, non_blocking=True)
-        buffer_right = self.transform(images=buffer_right)['images'].to(self.device, dtype=torch.float32, non_blocking=True)
+        buffer = self.transform(images=buffer)['images']
+        buffer_front = self.transform(images=buffer_front)['images']
+        buffer_left =  self.transform(images=buffer_left)['images']
+        buffer_right = self.transform(images=buffer_right)['images']
 
-        buffer_body = self.body_transform(images=buffer_body)['images'].to(self.device, dtype=torch.float32, non_blocking=True)
-        buffer_face = self.face_transform(images=buffer_face)['images'].to(self.device, dtype=torch.float32, non_blocking=True)
+        buffer_body = self.body_transform(images=buffer_body)['images']
+        buffer_face = self.face_transform(images=buffer_face)['images']
 
         emotion_label = EMOTION_LABEL.index((label_json['emotion_label'].capitalize()))
         behavior_label = DRIVER_BEHAVIOR_LABEL.index((label_json['driver_behavior_label']))
