@@ -4,7 +4,8 @@ import torch
 import torch.nn as nn
 import math
 
-from BaselineNet import ConvNet3D
+from Models.Baseline.MARNetOnly import ConvNet3D
+
 
 class VGG(torch.nn.Module):
     def __init__(self, in_channels: int = 3) -> None:

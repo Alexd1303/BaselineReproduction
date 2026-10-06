@@ -1,7 +1,7 @@
 from torch import nn
 import torch
 
-from MARNet import MARNet
+from Models.Baseline.MARNet import MARNet
 
 class ConvNet3D(nn.Module):
     def __init__(self, num_classes=512, num_keypoints=42):
@@ -20,7 +20,7 @@ class ConvNet3D(nn.Module):
         x = self.fc(x)
         return x
 
-class BaselineNet(nn.Module):
+class MARNetOnly(nn.Module):
     def __init__(self):
         super().__init__()
         self.marnet1 = MARNet()
@@ -89,7 +89,7 @@ if __name__ == "__main__":
         print("Posture output shape:", posture_output.shape)
 
 
-        model = BaselineNet().to(device).eval()
+        model = MARNetOnly().to(device).eval()
         img1 = torch.randn(24, 48, 224, 224).to(device)
         img2 = torch.randn(24, 48, 224, 224).to(device)
         img3 = torch.randn(24, 48, 224, 224).to(device)
