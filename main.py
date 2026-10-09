@@ -9,7 +9,6 @@ from torchmetrics import Accuracy
 from tqdm import tqdm
 
 from Data import CarDataset
-from Models import MARNetOnly, DBMEFusion, BaselineNet
 
 from Utils import Checkpoint
 
@@ -204,7 +203,7 @@ def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_type", type=str, choices=["MARNetOnly", "fusion", "baseline"], required=True, help="Type of model to train: 'baseline' or 'fusion'")
+    parser.add_argument("--model_type", type=str, choices=["MARNetOnly", "fusion", "baseline", "causalnet"], required=True, help="Type of model to train: 'baseline' or 'fusion'")
     parser.add_argument("--checkpoints_dir", type=Path, default="./checkpoints", help="Path to the checkpoints directory")
     parser.add_argument("--dataset_dir", type=Path, required=True, help="Path to the dataset directory")
     parser.add_argument("--split_dir", type=Path, required=True, help="Path to the split directory")
@@ -234,11 +233,17 @@ if __name__ == "__main__":
     val_dataset = CarDataset(csv_file=args.split_dir / "validation.csv", dataset_root=args.dataset_dir, horizontal_flip_prob=0.0, vertical_flip_prob=0.0)
     
     if args.model_type == "MARNetOnly":
+        from Models import MARNetOnly
         model = MARNetOnly()
     elif args.model_type == "fusion":
+        from Models import DBMEFusion
         model = DBMEFusion()
     elif args.model_type == "baseline":
+        from Models import BaselineNet
         model = BaselineNet()
+    elif args.model_type == "causalnet":
+        from Models import CausalNet
+        model = CausalNet(context_dim=1250)
     else:
         raise ValueError("Invalid model type. Please choose 'baseline' or 'fusion'.")
 
