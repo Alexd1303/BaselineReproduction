@@ -22,6 +22,7 @@ class BaselineNet(nn.Module):
 
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         
+        #TODO: Increase the size of the projection layers.
         self.driver_projection = nn.Conv2d(1536, 512, kernel_size=1)
 
         self.scene_projection = nn.Conv2d(1536, 512, kernel_size=1)

@@ -243,11 +243,11 @@ if __name__ == "__main__":
         model = BaselineNet()
     elif args.model_type == "causalnet":
         from Models import CausalNet
-        model = CausalNet(context_dim=1250)
+        model = CausalNet(context_dim=512)
     else:
         raise ValueError("Invalid model type. Please choose 'baseline' or 'fusion'.")
 
-    optimizer = SGD(model.parameters(), lr=args.learning_rate, momentum=0.9)
+    optimizer = SGD(model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=1e-4)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=args.lr_drop_factor, patience=args.lr_drop_patience)
     
     if args.start_from_checkpoint is not None:

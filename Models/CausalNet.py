@@ -1,4 +1,5 @@
-from typing import Optional
+from abc import ABC, abstractmethod
+from typing import Optional, override, Type
 
 import torch
 from torch import nn
@@ -6,25 +7,51 @@ from torch import nn
 from Models.Baseline.MARNet import MARNet
 from Models.Baseline.MARNetOnly import ConvNet3D
 
-class ContextCombinationModule(nn.Module):
+class ContextCombinationModule(nn.Module, ABC):
     def __init__(self, input_dim, context_dim):
         super().__init__()
+
+    @abstractmethod
+    def forward(self, x, embedding):
+        ...
+
+class DFEContextCombination(ContextCombinationModule):
+    def __init__(self, input_dim, context_dim):
+        super().__init__(input_dim, context_dim)
         self.fc1 = nn.Linear(input_dim, context_dim)
         self.relu = nn.ReLU()
         
         self.sigmoid = nn.Sigmoid()
 
+    @override
     def forward(self, x, embedding):
         x = self.fc1(x)
         x = self.relu(x)
         x = self.sigmoid(x)
         return x * embedding
+    
+class GRUContextCombination(ContextCombinationModule):
+    def __init__(self, input_dim, context_dim):
+        super().__init__(input_dim, context_dim)
+        self.gru = nn.GRU(input_size=input_dim, hidden_size=context_dim, batch_first=True)
+    
+    @override
+    def forward(self, x, embedding):
+        x = x.unsqueeze(1)
+        
+        embedding = embedding.unsqueeze(0)
+        
+        output, _ = self.gru(x, embedding)
+        
+        output = output.squeeze(1)
+        
+        return output
         
 
 class TCR_Module(nn.Module):
-    def __init__(self, context_dim: int):
+    def __init__(self, context_dim: int, contextCombinationModule: Type[ContextCombinationModule] = GRUContextCombination):
         super().__init__()
-        self.context_module = ContextCombinationModule(input_dim=1536, context_dim=context_dim)
+        self.context_module = contextCombinationModule(input_dim=1536, context_dim=context_dim)
         self.context_projection = nn.Linear(1536, context_dim)
         
         self.fc = nn.Linear(1536 + context_dim, 3)
@@ -41,9 +68,9 @@ class TCR_Module(nn.Module):
 
 
 class DER_Module(nn.Module):
-    def __init__(self, context_dim: int):
+    def __init__(self, context_dim: int, contextCombinationModule: Type[ContextCombinationModule] = GRUContextCombination):
         super().__init__()
-        self.context_module = ContextCombinationModule(input_dim=2560, context_dim=context_dim)
+        self.context_module = contextCombinationModule(input_dim=2560, context_dim=context_dim)
         self.context_projection = nn.Linear(2560, context_dim)
         
         self.fc = nn.Linear(2560 + context_dim, 5)
@@ -58,10 +85,11 @@ class DER_Module(nn.Module):
 
         return output, context
 
+
 class DBR_Module(nn.Module):
-    def __init__(self, context_dim: int):
+    def __init__(self, context_dim: int, contextCombinationModule: Type[ContextCombinationModule] = GRUContextCombination):
             super().__init__()
-            self.context_module = ContextCombinationModule(input_dim=2048, context_dim=context_dim)
+            self.context_module = contextCombinationModule(input_dim=2048, context_dim=context_dim)
             self.context_projection = nn.Linear(2048, context_dim)
             
             self.fc = nn.Linear(2048 + context_dim, 7)
@@ -76,10 +104,11 @@ class DBR_Module(nn.Module):
 
         return output, context
 
+
 class VBR_Module(nn.Module):
-    def __init__(self, context_dim: int):
+    def __init__(self, context_dim: int, contextCombinationModule: Type[ContextCombinationModule] = GRUContextCombination):
         super().__init__()
-        self.context_module = ContextCombinationModule(input_dim=4096, context_dim=context_dim)
+        self.context_module = contextCombinationModule(input_dim=4096, context_dim=context_dim)
         self.context_projection = nn.Linear(4096, context_dim)
         
         self.fc = nn.Linear(4096 + context_dim, 5)
@@ -97,7 +126,7 @@ class VBR_Module(nn.Module):
         
 
 class CausalNet(nn.Module):
-    def __init__(self, context_dim: int = 4096):
+    def __init__(self, context_dim: int, contextCombinationModule: Type[ContextCombinationModule] = GRUContextCombination):
         super().__init__()
         self.marnet_left = MARNet()
         self.marnet_front = MARNet()
@@ -109,10 +138,10 @@ class CausalNet(nn.Module):
         self.gesture_conv3d = ConvNet3D(num_keypoints=42)
         self.posture_conv3d = ConvNet3D(num_keypoints=26)
         
-        self.TCR_module = TCR_Module(context_dim=context_dim)
-        self.DER_module = DER_Module(context_dim=context_dim)
-        self.DBR_module = DBR_Module(context_dim=context_dim)
-        self.VBR_module = VBR_Module(context_dim=context_dim)
+        self.TCR_module = TCR_Module(context_dim=context_dim, contextCombinationModule=contextCombinationModule)
+        self.DER_module = DER_Module(context_dim=context_dim, contextCombinationModule=contextCombinationModule)
+        self.DBR_module = DBR_Module(context_dim=context_dim, contextCombinationModule=contextCombinationModule)
+        self.VBR_module = VBR_Module(context_dim=context_dim, contextCombinationModule=contextCombinationModule)
         
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
 
