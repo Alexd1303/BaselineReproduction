@@ -56,6 +56,8 @@ class BaselineNet(nn.Module):
         self.fc2 = nn.Linear(4096, 7)
         self.fc3 = nn.Linear(4096, 3)
         self.fc4 = nn.Linear(4096, 5)
+        
+        self.dropout = nn.Dropout(p=0.5)
 
     def forward(self, img1, img2, img3, img4, face, body, gesture, posture):
 
@@ -78,10 +80,10 @@ class BaselineNet(nn.Module):
         h_body_g = self.avg_pool(h_body).flatten(1)
         modality_tokens = torch.stack([h1_g, h2_g, h3_g, h4_g, h_face_g, h_body_g, h_gesture, h_posture], dim=1)
         
-        f_sp1 = self.specific1(modality_tokens)
-        f_sp2 = self.specific2(modality_tokens)
-        f_sp3 = self.specific3(modality_tokens)
-        f_sp4 = self.specific4(modality_tokens)
+        f_sp1 = self.dropout(self.specific1(modality_tokens))
+        f_sp2 = self.dropout(self.specific2(modality_tokens))
+        f_sp3 = self.dropout(self.specific3(modality_tokens))
+        f_sp4 = self.dropout(self.specific4(modality_tokens))
 
         f_dr = torch.cat([h1, h_face, h_body], dim=1)
 
@@ -103,7 +105,7 @@ class BaselineNet(nn.Module):
         f_jo = self.joint_projection(f_jo)
         f_sh = self.shared2(f_jo, f_ps)
 
-        f_sh = self.avg_pool(f_sh).flatten(1)
+        f_sh = self.dropout(self.avg_pool(f_sh).flatten(1))
     
         out1 = self.fc1(f_sp1) * torch.sigmoid(self.weight1) + self.fcs1(f_sh) * (1 - torch.sigmoid(self.weight1))
         out2 = self.fc2(f_sp2) * torch.sigmoid(self.weight2) + self.fcs2(f_sh) * (1 - torch.sigmoid(self.weight2))
@@ -148,4 +150,6 @@ if __name__ == "__main__":
         # print parameter counts for BaselineNet
         total_params = sum(p.numel() for p in model.parameters())
         print(f"Total parameters in BaselineNet: {total_params}")
+        
+        # TODO: Add dropout to both UniAD_MMTL and CausalNet models to prevent overfitting (hopefully).
         

@@ -53,7 +53,7 @@ class TCR_Module(nn.Module):
         super().__init__()
         self.context_module = contextCombinationModule(input_dim=1536, context_dim=context_dim)
         self.context_projection = nn.Linear(1536, context_dim)
-        
+        self.dropout = nn.Dropout(p=0.5)
         self.fc = nn.Linear(1536 + context_dim, 3)
     
     def forward(self, combined_features, context_embedding: Optional[torch.Tensor] = None):
@@ -62,6 +62,8 @@ class TCR_Module(nn.Module):
         else:
             context = self.context_projection(combined_features)
         
+        context = self.dropout(context)
+        combined_features = self.dropout(combined_features)
         output = self.fc(torch.cat([combined_features, context], dim=1))
 
         return output, context
@@ -72,7 +74,7 @@ class DER_Module(nn.Module):
         super().__init__()
         self.context_module = contextCombinationModule(input_dim=2560, context_dim=context_dim)
         self.context_projection = nn.Linear(2560, context_dim)
-        
+        self.dropout = nn.Dropout(p=0.5)
         self.fc = nn.Linear(2560 + context_dim, 5)
 
     def forward(self, combined_features, context_embedding=None):
@@ -81,6 +83,8 @@ class DER_Module(nn.Module):
         else:
             context = self.context_projection(combined_features)
         
+        context = self.dropout(context)
+        combined_features = self.dropout(combined_features)
         output = self.fc(torch.cat([combined_features, context], dim=1))
 
         return output, context
@@ -91,7 +95,7 @@ class DBR_Module(nn.Module):
             super().__init__()
             self.context_module = contextCombinationModule(input_dim=2048, context_dim=context_dim)
             self.context_projection = nn.Linear(2048, context_dim)
-            
+            self.dropout = nn.Dropout(p=0.5)
             self.fc = nn.Linear(2048 + context_dim, 7)
     
     def forward(self, combined_features, context_embedding=None):
@@ -100,6 +104,8 @@ class DBR_Module(nn.Module):
         else:
             context = self.context_projection(combined_features)
         
+        context = self.dropout(context)
+        combined_features = self.dropout(combined_features)
         output = self.fc(torch.cat([combined_features, context], dim=1))
 
         return output, context
@@ -110,7 +116,7 @@ class VBR_Module(nn.Module):
         super().__init__()
         self.context_module = contextCombinationModule(input_dim=4096, context_dim=context_dim)
         self.context_projection = nn.Linear(4096, context_dim)
-        
+        self.dropout = nn.Dropout(p=0.5)
         self.fc = nn.Linear(4096 + context_dim, 5)
         
     def forward(self, combined_features, context_embedding=None):
@@ -120,6 +126,8 @@ class VBR_Module(nn.Module):
         else:
             context = self.context_projection(combined_features)
         
+        context = self.dropout(context)
+        combined_features = self.dropout(combined_features)
         output = self.fc(torch.cat([combined_features, context], dim=1))
 
         return output, context
