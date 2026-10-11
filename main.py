@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from torch.optim import SGD
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, ReduceLROnPlateau, SequentialLR
 from torchmetrics import Accuracy
 from tqdm import tqdm
 
@@ -12,7 +12,7 @@ from Data import CarDataset
 
 from Utils import Checkpoint
 
-def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: ReduceLROnPlateau, train_dataset: CarDataset, val_dataset: CarDataset, checkpoints_dir: Path, name: str,start_epoch: int=0, num_epochs: int=10, batch_size: int=24, device: torch.device = torch.device("cpu"), num_workers: int=4):
+def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: SequentialLR, train_dataset: CarDataset, val_dataset: CarDataset, checkpoints_dir: Path, name: str,start_epoch: int=0, num_epochs: int=10, batch_size: int=24, device: torch.device = torch.device("cpu"), num_workers: int=4):
     
     checkpoints_dir = checkpoints_dir / name
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
@@ -36,6 +36,8 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: ReduceL
     lossDBR = nn.CrossEntropyLoss()
     lossTCR = nn.CrossEntropyLoss()
     lossVBR = nn.CrossEntropyLoss()
+    
+    grad_norms = []
     
     for epoch in range(start_epoch, num_epochs):
         model.train()
@@ -69,9 +71,10 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: ReduceL
             loss4 = lossVBR(out4, vehicle_label)
             loss = loss1 + loss2 + loss3 + loss4
             loss.backward()
+            grad_norms.append(torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0, error_if_nonfinite=True))
             optimizer.step()
 
-        print(f"Epoch {epoch + 1}/{num_epochs} - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {(accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4:.4f}")
+        print(f"Epoch {epoch + 1}/{num_epochs} - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {(accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4:.4f}, lr: {scheduler.get_last_lr()[0]:.6f}, grad_norm: {torch.stack(grad_norms).mean():.4f}")
         accuracy1.reset()
         accuracy2.reset()
         accuracy3.reset()
@@ -122,7 +125,7 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: ReduceL
         mAcc = (accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4
         print(f"Validation - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {mAcc:.4f}")
         
-        scheduler.step(sum(val_mLoss) / len(val_mLoss))
+        scheduler.step()
 
         # Save checkpoint
         checkpoint_path = checkpoints_dir / f"{name}_{epoch % 2}.pt"
@@ -248,7 +251,24 @@ if __name__ == "__main__":
         raise ValueError("Invalid model type. Please choose 'baseline' or 'fusion'.")
 
     optimizer = SGD(model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=1e-4)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=args.lr_drop_factor, patience=args.lr_drop_patience)
+    
+    warmup_epochs = 10
+
+    warmup_scheduler = LinearLR(
+        optimizer,
+        start_factor=0.1,
+        end_factor=1.0,
+        total_iters=warmup_epochs,
+    )
+
+    cosine_scheduler = CosineAnnealingLR(
+        optimizer,
+        T_max=args.num_epochs - warmup_epochs,
+        eta_min=1e-5,
+    )
+
+    
+    scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, cosine_scheduler], milestones=[warmup_epochs])
     
     if args.start_from_checkpoint is not None:
         checkpoint = torch.load(args.start_from_checkpoint)
