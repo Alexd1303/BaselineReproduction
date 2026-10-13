@@ -23,7 +23,7 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
     accuracy3 = Accuracy(task="multiclass", num_classes=3).to(device)
     accuracy4 = Accuracy(task="multiclass", num_classes=5).to(device)
     
-    early_stopper = EarlyStopper(patience=5, min_delta=0.001)
+    early_stopper = EarlyStopper(patience=15, min_delta=0.001)
     
     best_val_mAcc = 0.0
     if Path(checkpoints_dir / f"{name}_best.pt").is_file():
