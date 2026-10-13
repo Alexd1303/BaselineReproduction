@@ -17,6 +17,7 @@ wheels/
 
 checkpoint/
 checkpoints/
+imported_checkpoints/
 dataset_test/
 
 dataset_checker.py

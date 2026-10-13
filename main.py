@@ -5,12 +5,13 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torch.optim import SGD
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, ReduceLROnPlateau, SequentialLR
-from torchmetrics import Accuracy
 from tqdm import tqdm
 
-from Data import CarDataset
+from torchmetrics import Accuracy, ConfusionMatrix
 
-from Utils import Checkpoint
+from Data import CarDataset, EMOTION_LABEL, DRIVER_BEHAVIOR_LABEL, SCENE_CENTRIC_CONTEXT_LABEL, VEHICLE_BASED_CONTEXT_LABEL
+
+from Utils import Checkpoint, EarlyStopper, plot_confusion_matrix
 
 def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: SequentialLR, train_dataset: CarDataset, val_dataset: CarDataset, checkpoints_dir: Path, name: str,start_epoch: int=0, num_epochs: int=10, batch_size: int=24, device: torch.device = torch.device("cpu"), num_workers: int=4):
     
@@ -21,6 +22,8 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
     accuracy2 = Accuracy(task="multiclass", num_classes=7).to(device)
     accuracy3 = Accuracy(task="multiclass", num_classes=3).to(device)
     accuracy4 = Accuracy(task="multiclass", num_classes=5).to(device)
+    
+    early_stopper = EarlyStopper(patience=5, min_delta=0.001)
     
     best_val_mAcc = 0.0
     if Path(checkpoints_dir / f"{name}_best.pt").is_file():
@@ -38,6 +41,10 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
     lossVBR = nn.CrossEntropyLoss()
     
     grad_norms = []
+    training_losses = []
+    training_mAccs = []
+    val_losses = []
+    val_mAccs = []
     
     for epoch in range(start_epoch, num_epochs):
         model.train()
@@ -73,17 +80,19 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
             loss.backward()
             grad_norms.append(torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0, error_if_nonfinite=True))
             optimizer.step()
+            
+            training_losses.append(loss.item())
+            training_mAccs.append((accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4)
 
-        print(f"Epoch {epoch + 1}/{num_epochs} - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {(accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4:.4f}, lr: {scheduler.get_last_lr()[0]:.6f}, grad_norm: {torch.stack(grad_norms).mean():.4f}")
+        mAcc = (accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4
+        log_string = f"Epoch {epoch + 1}/{num_epochs} - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {mAcc:.4f}, train_loss: {sum(training_losses) / len(training_losses):.4f}, lr: {scheduler.get_last_lr()[0]:.6f}, grad_norm: {torch.stack(grad_norms).mean():.4f}"
+        print(log_string)
+        with open(checkpoints_dir / f"{name}_train_log.txt", "a") as f:
+            f.write(log_string + "\n")
         accuracy1.reset()
         accuracy2.reset()
         accuracy3.reset()
         accuracy4.reset()
-        
-        val_loss1 = []
-        val_loss2 = []
-        val_loss3 = []
-        val_loss4 = []
         val_mLoss = []
         
         model.eval()
@@ -114,17 +123,19 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
                     accuracy3.update(out3_val, context_label)
                     accuracy4.update(out4_val, vehicle_label)
                     
-                    val_loss1.append(lossDER(out1_val, emotion_label).item())
-                    val_loss2.append(lossDBR(out2_val, behavior_label).item())
-                    val_loss3.append(lossTCR(out3_val, context_label).item())
-                    val_loss4.append(lossVBR(out4_val, vehicle_label).item())
                     val_mLoss.append((lossDER(out1_val, emotion_label).item() + lossDBR(out2_val, behavior_label).item() + lossTCR(out3_val, context_label).item() + lossVBR(out4_val, vehicle_label).item()) / 4)
+                    
+                    val_losses.append((lossDER(out1_val, emotion_label).item() + lossDBR(out2_val, behavior_label).item() + lossTCR(out3_val, context_label).item() + lossVBR(out4_val, vehicle_label).item()) / 4)
+                    val_mAccs.append((accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4)
                 except Exception as e:
                     pass
         
         mAcc = (accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4
-        print(f"Validation - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {mAcc:.4f}")
-        
+        log_string = f"Validation {epoch + 1}/{num_epochs} - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {mAcc:.4f}, val_loss: {sum(val_mLoss) / len(val_mLoss):.4f}"
+        print(log_string)
+        with open(checkpoints_dir / f"{name}_val_log.txt", "a") as f:
+            f.write(log_string + "\n")
+
         scheduler.step()
 
         # Save checkpoint
@@ -157,6 +168,10 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
         accuracy2.reset()
         accuracy3.reset()
         accuracy4.reset()
+        
+        if early_stopper.early_stop(checkpoint, sum(val_mLoss) / len(val_mLoss)):
+            print("Early stopping triggered.")
+            break
 
 def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name: str, batch_size: int=24, device: torch.device = torch.device("cpu"), num_workers: int=4):
     
@@ -169,6 +184,10 @@ def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name
     accuracy2 = Accuracy(task="multiclass", num_classes=7).to(device)
     accuracy3 = Accuracy(task="multiclass", num_classes=3).to(device)
     accuracy4 = Accuracy(task="multiclass", num_classes=5).to(device)
+    confusion_matrix1 = ConfusionMatrix(task="multiclass", num_classes=5).to(device)
+    confusion_matrix2 = ConfusionMatrix(task="multiclass", num_classes=7).to(device)
+    confusion_matrix3 = ConfusionMatrix(task="multiclass", num_classes=3).to(device)
+    confusion_matrix4 = ConfusionMatrix(task="multiclass", num_classes=5).to(device)
     
     model.to(device)
     model.eval()
@@ -196,13 +215,30 @@ def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name
             accuracy2.update(out2_test, behavior_label)
             accuracy3.update(out3_test, context_label)
             accuracy4.update(out4_test, vehicle_label)
+            confusion_matrix1.update(out1_test, emotion_label)
+            confusion_matrix2.update(out2_test, behavior_label)
+            confusion_matrix3.update(out3_test, context_label)
+            confusion_matrix4.update(out4_test, vehicle_label)
             
     mAcc = (accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4
     print(f"Test - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {mAcc:.4f}")
-    
+    print(f"Test - Confusion Matrix 1:\n{confusion_matrix1.compute()}")
+    print(f"Test - Confusion Matrix 2:\n{confusion_matrix2.compute()}")
+    print(f"Test - Confusion Matrix 3:\n{confusion_matrix3.compute()}")
+    print(f"Test - Confusion Matrix 4:\n{confusion_matrix4.compute()}")
+
     with open(checkpoints_dir / f"{name}_test_results.txt", "w") as f:
         f.write(f"Test - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {mAcc:.4f}\n")
-        
+        f.write(f"Test - Confusion Matrix 1:\n{confusion_matrix1.compute()}\n")
+        f.write(f"Test - Confusion Matrix 2:\n{confusion_matrix2.compute()}\n")
+        f.write(f"Test - Confusion Matrix 3:\n{confusion_matrix3.compute()}\n")
+        f.write(f"Test - Confusion Matrix 4:\n{confusion_matrix4.compute()}\n")
+    
+    plot_confusion_matrix(confusion_matrix1.compute(), EMOTION_LABEL, "Confusion Matrix for DER", checkpoints_dir / f"{name}_confusion_matrix_DER.png")
+    plot_confusion_matrix(confusion_matrix2.compute(), DRIVER_BEHAVIOR_LABEL, "Confusion Matrix for DBR", checkpoints_dir / f"{name}_confusion_matrix_DBR.png")
+    plot_confusion_matrix(confusion_matrix3.compute(), SCENE_CENTRIC_CONTEXT_LABEL, "Confusion Matrix for TCR", checkpoints_dir / f"{name}_confusion_matrix_TCR.png")
+    plot_confusion_matrix(confusion_matrix4.compute(), VEHICLE_BASED_CONTEXT_LABEL, "Confusion Matrix for VBR", checkpoints_dir / f"{name}_confusion_matrix_VBR.png")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

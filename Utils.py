@@ -1,6 +1,7 @@
 import torch
 from pathlib import Path
 from typing import Any, Mapping, Optional
+
         
 class Checkpoint:
     def __init__(self):
@@ -46,6 +47,42 @@ class Checkpoint:
             'val_mAcc': self.val_mAcc,
             'val_mLoss': self.val_mLoss
         }
+        
+class EarlyStopper:
+    """
+    Source: https://stackoverflow.com/a/73704579/14171143
+    """
+    
+    def __init__(self, patience: int=1, min_delta: float=0):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.min_validation_loss = float('inf')
+        self.best_model_checkpoint: Checkpoint = Checkpoint()
+
+    def early_stop(self, checkpoint: Checkpoint, validation_loss: float) -> bool:
+        if validation_loss < self.min_validation_loss:
+            self.min_validation_loss = validation_loss
+            self.counter = 0
+            self.best_model_checkpoint = checkpoint
+        elif validation_loss > (self.min_validation_loss + self.min_delta):
+            self.counter += 1
+            if self.counter >= self.patience:
+                return True
+        return False
+
+
+def plot_confusion_matrix(confusion_matrix, labels, title, save_path):
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    fig, ax = plt.subplots(figsize=(15, 15))
+    sns.heatmap(confusion_matrix.cpu().numpy(), annot=True, fmt='d', cmap='Blues', ax=ax, xticklabels=labels, yticklabels=labels)
+    ax.set_title(title)
+    ax.set_xlabel("Predicted Labels")
+    ax.set_ylabel("True Labels")
+    fig.savefig(save_path)
+    plt.close(fig)
 
 
 if __name__ == "__main__":
