@@ -35,10 +35,10 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, persistent_workers=True)
     
     model.to(device)
-    lossDER = nn.CrossEntropyLoss()
-    lossDBR = nn.CrossEntropyLoss()
-    lossTCR = nn.CrossEntropyLoss()
-    lossVBR = nn.CrossEntropyLoss()
+    lossDER = nn.CrossEntropyLoss(label_smoothing=0.1)
+    lossDBR = nn.CrossEntropyLoss(label_smoothing=0.1)
+    lossTCR = nn.CrossEntropyLoss(label_smoothing=0.1)
+    lossVBR = nn.CrossEntropyLoss(label_smoothing=0.1)
     
     grad_norms = []
     training_losses = []
