@@ -23,7 +23,7 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
     accuracy3 = Accuracy(task="multiclass", num_classes=3).to(device)
     accuracy4 = Accuracy(task="multiclass", num_classes=5).to(device)
     
-    early_stopper = EarlyStopper(patience=15, min_delta=0.001)
+    early_stopper = EarlyStopper(patience=25, min_delta=0.001)
     
     best_val_mAcc = 0.0
     if Path(checkpoints_dir / f"{name}_best.pt").is_file():
@@ -169,7 +169,7 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
         accuracy3.reset()
         accuracy4.reset()
         
-        if early_stopper.early_stop(checkpoint, sum(val_mLoss) / len(val_mLoss)):
+        if epoch > warmup_epochs and early_stopper.early_stop(checkpoint, sum(val_mLoss) / len(val_mLoss)):
             print("Early stopping triggered.")
             break
 
@@ -239,10 +239,44 @@ def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name
     plot_confusion_matrix(confusion_matrix3.compute(), SCENE_CENTRIC_CONTEXT_LABEL, "Confusion Matrix for TCR", checkpoints_dir / f"{name}_confusion_matrix_TCR.png")
     plot_confusion_matrix(confusion_matrix4.compute(), VEHICLE_BASED_CONTEXT_LABEL, "Confusion Matrix for VBR", checkpoints_dir / f"{name}_confusion_matrix_VBR.png")
 
+def instantiate_MARNetOnly():
+    from Models import MARNetOnly
+    return MARNetOnly()
+
+def instantiate_DFMEFusion():
+    from Models import DBMEFusion
+    return DBMEFusion()
+
+def instantiate_BaselineNet():
+    from Models import BaselineNet
+    return BaselineNet()
+
+def instantiate_CausalNet():
+    from Models import CausalNet
+    return CausalNet(context_dim=512)
+
+def instantiate_Resnet18EncoderNet(pretrained=True, freeze=True):
+    from Models import Resnet18EncoderNet
+    return Resnet18EncoderNet(pretrained=pretrained, freeze=freeze)
+
+def instantiate_MARNetImageNetWrapper():
+    from Models import MARNetImageNetWrapper
+    return MARNetImageNetWrapper()
 
 if __name__ == "__main__":
+    
+    available_models = {
+        "MARNetOnly": instantiate_MARNetOnly,
+        "MARNetImageNetWrapper": instantiate_MARNetImageNetWrapper,
+        "fusion": instantiate_DFMEFusion,
+        "baseline": instantiate_BaselineNet,
+        "causalnet": instantiate_CausalNet,
+        "resnet18": lambda: instantiate_Resnet18EncoderNet(pretrained=True, freeze=True),
+        "resnet18scratch": lambda: instantiate_Resnet18EncoderNet(pretrained=False, freeze=False)
+    }
+    
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_type", type=str, choices=["MARNetOnly", "fusion", "baseline", "causalnet"], required=True, help="Type of model to train: 'baseline' or 'fusion'")
+    parser.add_argument("--model_type", type=str, choices=available_models.keys(), required=True, help="Type of model to train: 'baseline' or 'fusion'")
     parser.add_argument("--checkpoints_dir", type=Path, default="./checkpoints", help="Path to the checkpoints directory")
     parser.add_argument("--dataset_dir", type=Path, required=True, help="Path to the dataset directory")
     parser.add_argument("--split_dir", type=Path, required=True, help="Path to the split directory")
@@ -271,20 +305,10 @@ if __name__ == "__main__":
     train_dataset = CarDataset(csv_file=args.split_dir / "training.csv", dataset_root=args.dataset_dir, horizontal_flip_prob=0.5, vertical_flip_prob=0.5)
     val_dataset = CarDataset(csv_file=args.split_dir / "validation.csv", dataset_root=args.dataset_dir, horizontal_flip_prob=0.0, vertical_flip_prob=0.0)
     
-    if args.model_type == "MARNetOnly":
-        from Models import MARNetOnly
-        model = MARNetOnly()
-    elif args.model_type == "fusion":
-        from Models import DBMEFusion
-        model = DBMEFusion()
-    elif args.model_type == "baseline":
-        from Models import BaselineNet
-        model = BaselineNet()
-    elif args.model_type == "causalnet":
-        from Models import CausalNet
-        model = CausalNet(context_dim=512)
+    if args.model_type in available_models:
+        model = available_models[args.model_type]().to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     else:
-        raise ValueError("Invalid model type. Please choose 'baseline' or 'fusion'.")
+        raise ValueError(f"Invalid model type. Please choose one of: {', '.join(available_models.keys())}.")
 
     optimizer = SGD(model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=1e-4)
     

@@ -68,6 +68,20 @@ class MARNetOnly(nn.Module):
         out4 = self.fc4(fc)
 
         return out1, out2, out3, out4
+
+class MARNetImageNetWrapper(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=48, kernel_size=1, stride=1, padding=0)
+        self.marnet = MARNet()
+        self.fc = nn.Linear(512, 1000)
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+
+    def forward(self, x):
+        h = self.marnet(self.conv1(x))
+        h = self.avg_pool(h).flatten(1)
+        out = self.fc(h)
+        return out
     
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
