@@ -166,7 +166,7 @@ class AxialBlock(nn.Module):
 
 
 class AxialAttentionNet(nn.Module):
-    def __init__(self, block, layers: Tuple[int, int, int], zero_init_residual=True, groups=8, width_per_group=64, replace_stride_with_dilation=None, norm_layer=None, s: float=1):
+    def __init__(self, block, input_channels: int, layers: Tuple[int, int, int], zero_init_residual=True, groups=8, width_per_group=64, replace_stride_with_dilation=None, norm_layer=None, s: float=1):
         """
         Axial Attention Network
         
@@ -202,7 +202,7 @@ class AxialAttentionNet(nn.Module):
         # self.bn_reduce = nn.BatchNorm2d(3)
         # self.conv1 = nn.Conv2d(48, self.inplanes, kernel_size=7, stride=2, padding=3, bias=False)
 
-        self.conv1 = nn.Conv2d(48, self.inplanes, kernel_size=7, stride=2, padding=3,
+        self.conv1 = nn.Conv2d(input_channels, self.inplanes, kernel_size=7, stride=2, padding=3,
                                bias=False)
 
         self.bn1 = norm_layer(self.inplanes)
@@ -291,8 +291,8 @@ class AxialAttentionNet(nn.Module):
         return self._forward_impl(x)
 
 
-def HVAttention() -> AxialAttentionNet:
-    model = AxialAttentionNet(AxialBlock, (1, 2, 4), s=0.5)
+def HVAttention(input_channels:int = 48) -> AxialAttentionNet:
+    model = AxialAttentionNet(AxialBlock, input_channels, (1, 2, 4), s=0.5)
     return model
 
 
@@ -562,9 +562,9 @@ class BiLevelRoutingAttention(nn.Module):
             return rearrange(out, "n h w c -> n c h w")
         
 class MARNet(nn.Module):
-    def __init__(self):
+    def __init__(self, input_channels: int = 48):
         super().__init__()
-        self.backbone = HVAttention()
+        self.backbone = HVAttention(input_channels)
         self.regional_attention = BiLevelRoutingAttention(512, n_win=7, topk=4)
         
     def forward(self, x):
