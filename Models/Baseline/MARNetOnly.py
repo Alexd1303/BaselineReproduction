@@ -69,11 +69,13 @@ class MARNetOnly(nn.Module):
 
         return out1, out2, out3, out4
 
-class MARNetImageNetWrapper(nn.Module):
-    def __init__(self):
+class MARNetPretrainingWrapper(nn.Module):
+    def __init__(self, input_channels=3, num_classes=1000):
         super().__init__()
-        self.marnet = MARNet(input_channels=3)
-        self.fc = nn.Linear(512, 1000)
+        self.input_channels = input_channels
+        self.num_classes = num_classes
+        self.marnet = MARNet(input_channels=input_channels)
+        self.fc = nn.Linear(512, num_classes)
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
 
     def forward(self, x):

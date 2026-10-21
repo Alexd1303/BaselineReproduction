@@ -6,6 +6,8 @@ from torch.utils.data import DataLoader
 from torch.optim import SGD
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, ReduceLROnPlateau, SequentialLR
 from tqdm import tqdm
+import numpy as np
+from PIL import Image
 
 from torchmetrics import Accuracy, ConfusionMatrix
 
@@ -41,18 +43,17 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
     lossVBR = nn.CrossEntropyLoss(label_smoothing=0.1)
     
     grad_norms = []
-    training_losses = []
-    training_mAccs = []
-    val_losses = []
     val_mAccs = []
     
     for epoch in range(start_epoch, num_epochs):
+        train_mLoss = []
+        
         model.train()
-        for img1,img2,img3,img4,face,body, posture, gesture,emotion_label, behavior_label, context_label, vehicle_label in tqdm(train_loader, desc=f"Training"):
-            img1 = img1.view(-1, 48, 224, 224).to(device, non_blocking=True)
-            img2 = img2.view(-1, 48, 224, 224).to(device, non_blocking=True)
-            img3 = img3.view(-1, 48, 224, 224).to(device, non_blocking=True)
-            img4 = img4.view(-1, 48, 224, 224).to(device, non_blocking=True)
+        for inside, front, left, right, face, body, posture, gesture, emotion_label, behavior_label, context_label, vehicle_label in tqdm(train_loader, desc=f"Training"):
+            inside = inside.view(-1, 48, 224, 224).to(device, non_blocking=True)
+            front = front.view(-1, 48, 224, 224).to(device, non_blocking=True)
+            left = left.view(-1, 48, 224, 224).to(device, non_blocking=True)
+            right = right.view(-1, 48, 224, 224).to(device, non_blocking=True)
             face = face.view(-1, 48, 224, 224).to(device, non_blocking=True)
             body = body.view(-1, 48, 224, 224).to(device, non_blocking=True)
             #gesture = gesture.view(batch_size, 3, 16, 42, 1).to(device, non_blocking=True)
@@ -65,7 +66,7 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
             vehicle_label = vehicle_label.to(device, non_blocking=True)
 
             model.zero_grad()
-            out1, out2, out3, out4 = model(img1, img2, img3, img4, face, body, gesture, posture)
+            out1, out2, out3, out4 = model(inside, front, left, right, face, body, gesture, posture)
             
             accuracy1.update(out1, emotion_label)
             accuracy2.update(out2, behavior_label)
@@ -81,11 +82,11 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
             grad_norms.append(torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0, error_if_nonfinite=True))
             optimizer.step()
             
-            training_losses.append(loss.item())
-            training_mAccs.append((accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4)
+            train_mLoss.append(loss.item())
 
         mAcc = (accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4
-        log_string = f"Epoch {epoch + 1}/{num_epochs} - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {mAcc:.4f}, train_loss: {sum(training_losses) / len(training_losses):.4f}, lr: {scheduler.get_last_lr()[0]:.6f}, grad_norm: {torch.stack(grad_norms).mean():.4f}"
+        train_mLoss = sum(train_mLoss) / len(train_mLoss) if train_mLoss else float('inf')
+        log_string = f"Epoch {epoch + 1}/{num_epochs} - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {mAcc:.4f}, train_loss: {train_mLoss:.4f}, lr: {scheduler.get_last_lr()[0]:.6f}, grad_norm: {torch.stack(grad_norms).mean():.4f}"
         print(log_string)
         with open(checkpoints_dir / f"{name}_train_log.txt", "a") as f:
             f.write(log_string + "\n")
@@ -93,16 +94,17 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
         accuracy2.reset()
         accuracy3.reset()
         accuracy4.reset()
+        
         val_mLoss = []
         
         model.eval()
         with torch.no_grad():
-            for img1,img2,img3,img4,face,body, posture, gesture,emotion_label, behavior_label, context_label, vehicle_label in tqdm(val_loader, desc=f"Validation"):
+            for inside, front, left, right, face, body, posture, gesture, emotion_label, behavior_label, context_label, vehicle_label in tqdm(val_loader, desc=f"Validation"):
                 try:
-                    img1 = img1.view(-1, 48, 224, 224).to(device, non_blocking=True)
-                    img2 = img2.view(-1, 48, 224, 224).to(device, non_blocking=True)
-                    img3 = img3.view(-1, 48, 224, 224).to(device, non_blocking=True)
-                    img4 = img4.view(-1, 48, 224, 224).to(device, non_blocking=True)
+                    inside = inside.view(-1, 48, 224, 224).to(device, non_blocking=True)
+                    front = front.view(-1, 48, 224, 224).to(device, non_blocking=True)
+                    left = left.view(-1, 48, 224, 224).to(device, non_blocking=True)
+                    right = right.view(-1, 48, 224, 224).to(device, non_blocking=True)
                     face = face.view(-1, 48, 224, 224).to(device, non_blocking=True)
                     body = body.view(-1, 48, 224, 224).to(device, non_blocking=True)
                     
@@ -116,7 +118,7 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
                     context_label = context_label.to(device, non_blocking=True)
                     vehicle_label = vehicle_label.to(device, non_blocking=True)
 
-                    out1_val, out2_val, out3_val, out4_val = model(img1, img2, img3, img4, face, body, gesture ,posture)
+                    out1_val, out2_val, out3_val, out4_val = model(inside, front, left, right, face, body, gesture ,posture)
 
                     accuracy1.update(out1_val, emotion_label)
                     accuracy2.update(out2_val, behavior_label)
@@ -125,13 +127,13 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
                     
                     val_mLoss.append((lossDER(out1_val, emotion_label).item() + lossDBR(out2_val, behavior_label).item() + lossTCR(out3_val, context_label).item() + lossVBR(out4_val, vehicle_label).item()) / 4)
                     
-                    val_losses.append((lossDER(out1_val, emotion_label).item() + lossDBR(out2_val, behavior_label).item() + lossTCR(out3_val, context_label).item() + lossVBR(out4_val, vehicle_label).item()) / 4)
                     val_mAccs.append((accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4)
                 except Exception as e:
                     pass
         
         mAcc = (accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4
-        log_string = f"Validation {epoch + 1}/{num_epochs} - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {mAcc:.4f}, val_loss: {sum(val_mLoss) / len(val_mLoss):.4f}"
+        val_mLoss = sum(val_mLoss) / len(val_mLoss) if val_mLoss else float('inf')
+        log_string = f"Validation {epoch + 1}/{num_epochs} - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {mAcc:.4f}, val_loss: {val_mLoss:.4f}"
         print(log_string)
         with open(checkpoints_dir / f"{name}_val_log.txt", "a") as f:
             f.write(log_string + "\n")
@@ -152,7 +154,7 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
         checkpoint.val_accuracy3 = accuracy3.compute().item()
         checkpoint.val_accuracy4 = accuracy4.compute().item()
         checkpoint.val_mAcc = mAcc.item()
-        checkpoint.val_mLoss = sum(val_mLoss) / len(val_mLoss)
+        checkpoint.val_mLoss = val_mLoss
 
         torch.save(checkpoint.asdict(), checkpoint_path)
         print(f"Checkpoint saved at {checkpoint_path}")
@@ -169,11 +171,11 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
         accuracy3.reset()
         accuracy4.reset()
         
-        if epoch > warmup_epochs and early_stopper.early_stop(checkpoint, sum(val_mLoss) / len(val_mLoss)):
+        if epoch > warmup_epochs and early_stopper.early_stop(checkpoint, val_mLoss):
             print("Early stopping triggered.")
             break
 
-def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name: str, batch_size: int=24, device: torch.device = torch.device("cpu"), num_workers: int=4):
+def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name: str, batch_size: int=24, device: torch.device = torch.device("cpu"), num_workers: int=4, save_misclassified: bool=False):
     
     checkpoints_dir = checkpoints_dir / name
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
@@ -192,12 +194,19 @@ def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name
     model.to(device)
     model.eval()
     
+    missclassified_dir = checkpoints_dir / f"{name}_misclassified"
+    missclassified_dir.mkdir(parents=True, exist_ok=True)
+    (missclassified_dir / "DER").mkdir(parents=True, exist_ok=True)
+    (missclassified_dir / "DBR").mkdir(parents=True, exist_ok=True)
+    (missclassified_dir / "TCR").mkdir(parents=True, exist_ok=True)
+    (missclassified_dir / "VBR").mkdir(parents=True, exist_ok=True)
+    
     with torch.no_grad():
-        for img1,img2,img3,img4,face,body, posture, gesture,emotion_label, behavior_label, context_label, vehicle_label in tqdm(test_loader, desc=f"Testing"):
-            img1 = img1.view(-1, 48, 224, 224).to(device, non_blocking=True)
-            img2 = img2.view(-1, 48, 224, 224).to(device, non_blocking=True)
-            img3 = img3.view(-1, 48, 224, 224).to(device, non_blocking=True)
-            img4 = img4.view(-1, 48, 224, 224).to(device, non_blocking=True)
+        for cnt, (inside, front, left, right, face, body, posture, gesture, emotion_label, behavior_label, context_label, vehicle_label) in tqdm(enumerate(test_loader), desc=f"Testing"):
+            inside = inside.view(-1, 48, 224, 224).to(device, non_blocking=True)
+            front = front.view(-1, 48, 224, 224).to(device, non_blocking=True)
+            left = left.view(-1, 48, 224, 224).to(device, non_blocking=True)
+            right = right.view(-1, 48, 224, 224).to(device, non_blocking=True)
             face = face.view(-1, 48, 224, 224).to(device, non_blocking=True)
             body = body.view(-1, 48, 224, 224).to(device, non_blocking=True)
             #gesture = gesture.view(batch_size, 3, 16, 42, 1).to(device, non_blocking=True)
@@ -209,7 +218,64 @@ def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name
             context_label = context_label.to(device, non_blocking=True)
             vehicle_label = vehicle_label.to(device, non_blocking=True)
 
-            out1_test , out2_test , out3_test , out4_test = model(img1, img2, img3, img4 ,face ,body , gesture ,posture)
+            out1_test, out2_test, out3_test, out4_test = model(inside, front, left, right, face, body, gesture, posture)
+            
+            if save_misclassified:
+                # save misclassified images for DER as returned from the loader
+                misclassified_indices = (out1_test.argmax(dim=1) != emotion_label).nonzero(as_tuple=True)[0]
+                for i in misclassified_indices:
+                    inside_misclassified = inside[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
+                    face_misclassified = face[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
+                    body_misclassified = body[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
+
+                    # Save the misclassified images as png files
+                    Image.fromarray((inside_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "DER" / f"img4_{cnt}_{i}.png")
+                    Image.fromarray((face_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "DER" / f"face_{cnt}_{i}.png")
+                    Image.fromarray((body_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "DER" / f"body_{cnt}_{i}.png")
+                    
+                # save misclassified images for DBR as returned from the loader
+                misclassified_indices = (out2_test.argmax(dim=1) != behavior_label).nonzero(as_tuple=True)[0]
+                for i in misclassified_indices:
+                    inside_misclassified = inside[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
+                    face_misclassified = face[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
+                    body_misclassified = body[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
+
+                    # Save the misclassified images
+                    Image.fromarray((inside_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "DBR" / f"img4_{cnt}_{i}.png")
+                    Image.fromarray((face_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "DBR" / f"face_{cnt}_{i}.png")
+                    Image.fromarray((body_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "DBR" / f"body_{cnt}_{i}.png")
+                
+                # save misclassified images for TCR as returned from the loader
+                misclassified_indices = (out3_test.argmax(dim=1) != context_label).nonzero(as_tuple=True)[0]
+                for i in misclassified_indices:
+                    front_misclassified = front[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
+                    left_misclassified = left[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
+                    right_misclassified = right[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
+
+                    # Save the misclassified images
+                    Image.fromarray((front_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "TCR" / f"img1_{cnt}_{i}.png")
+                    Image.fromarray((left_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "TCR" / f"img2_{cnt}_{i}.png")
+                    Image.fromarray((right_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "TCR" / f"img3_{cnt}_{i}.png")
+                
+                # save misclassified images for VBR as returned from the loader
+                misclassified_indices = (out4_test.argmax(dim=1) != vehicle_label).nonzero(as_tuple=True)[0]
+                for i in misclassified_indices:
+                    inside_misclassified = inside[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
+                    front_misclassified = front[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
+                    left_misclassified = left[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
+                    right_misclassified = right[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
+                    face_misclassified = face[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
+                    body_misclassified = body[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
+
+                    # Save the misclassified images
+                    Image.fromarray((inside_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "VBR" / f"img1_{cnt}_{i}.png")
+                    Image.fromarray((front_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "VBR" / f"img2_{cnt}_{i}.png")
+                    Image.fromarray((left_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "VBR" / f"img3_{cnt}_{i}.png")
+                    Image.fromarray((right_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "VBR" / f"img4_{cnt}_{i}.png")
+                    Image.fromarray((face_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "VBR" / f"face_{cnt}_{i}.png")
+                    Image.fromarray((body_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "VBR" / f"body_{cnt}_{i}.png")
+
+
             
             accuracy1.update(out1_test, emotion_label)
             accuracy2.update(out2_test, behavior_label)
@@ -259,15 +325,15 @@ def instantiate_Resnet18EncoderNet(pretrained=True, freeze=True):
     from Models import Resnet18EncoderNet
     return Resnet18EncoderNet(pretrained=pretrained, freeze=freeze)
 
-def instantiate_MARNetImageNetWrapper():
-    from Models import MARNetImageNetWrapper
-    return MARNetImageNetWrapper()
+def instantiate_MARNetPretrainingWrapper():
+    from Models import MARNetPretrainingWrapper
+    return MARNetPretrainingWrapper()
 
 if __name__ == "__main__":
     
     available_models = {
         "MARNetOnly": instantiate_MARNetOnly,
-        "MARNetImageNetWrapper": instantiate_MARNetImageNetWrapper,
+        "MARNetPretrainingWrapper": instantiate_MARNetPretrainingWrapper,
         "fusion": instantiate_DFMEFusion,
         "baseline": instantiate_BaselineNet,
         "causalnet": instantiate_CausalNet,
@@ -288,6 +354,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_workers", type=int, default=4, help="Number of workers for data loading")
     parser.add_argument("--lr_drop_factor", type=float, default=0.1, help="Factor by which the learning rate will be reduced")
     parser.add_argument("--lr_drop_patience", type=int, default=5, help="Number of epochs with no improvement after which learning rate will be reduced")
+    parser.add_argument("--save_misclassified", action="store_true", help="Flag to save misclassified images during testing")
 
     args = parser.parse_args()
 
@@ -347,6 +414,8 @@ if __name__ == "__main__":
     train(model, optimizer, scheduler, train_dataset, val_dataset, args.checkpoints_dir, name=args.model_name, start_epoch=start_epoch, num_epochs=args.num_epochs, batch_size=args.batch_size, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), num_workers=args.num_workers)
     
     test_dataset = CarDataset(csv_file=args.split_dir / "testing.csv", dataset_root=args.dataset_dir, horizontal_flip_prob=0.0, vertical_flip_prob=0.0)
+    
+    test(model, test_dataset, args.checkpoints_dir, name=args.model_name, batch_size=1, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), num_workers=args.num_workers, save_misclassified=args.save_misclassified)
     
     best_checkpoint_path = args.checkpoints_dir / args.model_name / f"{args.model_name}_best.pt"
     

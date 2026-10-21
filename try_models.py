@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from Models import Resnet18EncoderNet, BaselineNet, MARNetImageNetWrapper
+from Models import Resnet18EncoderNet, BaselineNet, MARNetPretrainingWrapper
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -30,7 +30,7 @@ if __name__ == "__main__":
         #print("Output shapes:", out1.shape, out2.shape, out3.shape, out4.shape)
         #print("Parameter count:", sum(p.numel() for p in model.parameters()))
         
-        model = MARNetImageNetWrapper().to(device).eval()
+        model = MARNetPretrainingWrapper().to(device).eval()
         imagenet_input = torch.randn(2, 3, 224, 224).to(device)
         out = model(imagenet_input)
         

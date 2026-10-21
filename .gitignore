@@ -20,7 +20,6 @@ checkpoints/
 imported_checkpoints/
 dataset_test/
 
-dataset_checker.py
 results.txt
 terminal_output.txt
 
@@ -29,3 +28,8 @@ slurm_scripts/
 job_logs/
 
 *.slurm
+
+# Utils
+dataset_checker.py
+print_curves.ipynb
+try_models.py

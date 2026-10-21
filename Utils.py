@@ -76,12 +76,39 @@ def plot_confusion_matrix(confusion_matrix, labels, title, save_path):
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    fig, ax = plt.subplots(figsize=(15, 15))
-    sns.heatmap(confusion_matrix.cpu().numpy(), annot=True, fmt='d', cmap='Blues', ax=ax, xticklabels=labels, yticklabels=labels)
-    ax.set_title(title)
-    ax.set_xlabel("Predicted Labels")
-    ax.set_ylabel("True Labels")
-    fig.savefig(save_path)
+    n = len(labels)
+
+    matrix_size = max(8.0, n * 1.8)
+    fig_width = matrix_size + 1.0
+    fig_height = matrix_size
+
+    annotation_size = max(10, 18 - n)
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+    sns.heatmap(
+        confusion_matrix.cpu().numpy(),
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        ax=ax,
+        xticklabels=labels,
+        yticklabels=labels,
+        square=True,
+        annot_kws={"fontsize": annotation_size},
+        cbar_kws={"shrink": 0.8}
+    )
+
+    ax.set_title(title, fontsize=16)
+    ax.set_xlabel("Predicted Labels", fontsize=13)
+    ax.set_ylabel("True Labels", fontsize=13)
+
+    ax.tick_params(axis="x", labelsize=11)
+    ax.tick_params(axis="y", labelsize=11)
+
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=300, bbox_inches="tight")
+
     plt.close(fig)
 
 

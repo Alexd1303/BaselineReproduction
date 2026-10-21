@@ -153,7 +153,7 @@ class CausalNet(nn.Module):
         
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
 
-    def forward(self, left, front, right, inside, body, face, gesture, posture):
+    def forward(self, inside, front, left, right, face, body, gesture, posture):
         left_features = self.marnet_left(left)
         front_features = self.marnet_front(front)
         right_features = self.marnet_right(right)

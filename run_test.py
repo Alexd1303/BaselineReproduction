@@ -12,7 +12,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     parser = argparse.ArgumentParser(description="Test the model on the test dataset.")
-    parser.add_argument("--model_type", type=str, required=True, choices=["MARNetOnly", "fusion", "baseline", "causalnet"], help="Type of model to test: 'MARNetOnly', 'fusion', 'baseline', or 'causalnet'.")
+    parser.add_argument("--model_type", type=str, required=True, choices=["MARNetOnly", "fusion", "baseline", "causalnet", "resnet18", "resnet18scratch"], help="Type of model to test: 'MARNetOnly', 'fusion', 'baseline', or 'causalnet'.")
     parser.add_argument("--dataset_dir", type=Path, required=True, help="Directory where the dataset is located.")
     parser.add_argument("--split_dir", type=Path, required=True, help="Directory where the dataset split files are located.")
     parser.add_argument("--checkpoint", type=Path, required=True, help="Path to the checkpoint file.")
@@ -31,6 +31,12 @@ if __name__ == "__main__":
     elif args.model_type == "causalnet":
         from Models import CausalNet
         model = CausalNet(context_dim=512)
+    elif args.model_type == "resnet18":
+        from Models import Resnet18EncoderNet
+        model = Resnet18EncoderNet(pretrained=True, freeze=True)
+    elif args.model_type == "resnet18scratch":
+        from Models import Resnet18EncoderNet
+        model = Resnet18EncoderNet(pretrained=False, freeze=False)
     else:
         raise ValueError("Invalid model type. Please choose 'baseline' or 'fusion'.")
     

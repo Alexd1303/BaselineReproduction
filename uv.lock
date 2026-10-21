@@ -66,11 +66,26 @@ wheels = [
 ]
 
 [[package]]
+name = "av"
+version = "13.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/df/4f77aa98b998e1a19622b7a45da07884a053826e9038138d8023208e31e5/av-13.0.0.tar.gz", hash = "sha256:7fb1a5588cd8ce4d0564ddf82221f886541ea2d5152f15e63ab890430dcd3c31", size = 3884902, upload-time = "2024-09-04T08:30:48.971Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/df/90/f8120cebf0b86ff70691603a6fb1ef473d1fd9c99db058d0413e9a630538/av-13.0.0-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:9eaf76c3a8a40dc3424ee9360b457143699d96f6e3faffb00867fd747b821ab9", size = 24238853, upload-time = "2024-09-04T08:29:08.611Z" },
+    { url = "https://files.pythonhosted.org/packages/62/7d/090813d188eebbe183acad6e0cfbd9cdeca0e7f7318a0a3bd6f44ac7d16f/av-13.0.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:623809f0684bf4379328ced38a25c295969997ba574ed17b99fa4ee3aa564d66", size = 19446605, upload-time = "2024-09-04T08:29:11.922Z" },
+    { url = "https://files.pythonhosted.org/packages/71/ec/bdc954939463127ca38ee023061be0ac89bdf2f2de6ab23f6a1d8112d070/av-13.0.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:8dc441b3899f1eb259af17acb2e5218762dcc99a4fbd6fe4d1f4155e253728b2", size = 32317356, upload-time = "2024-09-04T08:29:15.475Z" },
+    { url = "https://files.pythonhosted.org/packages/00/78/8d808f4868862b1b539ffd9af1775792f128a903f134c2dbfdb39a7799e3/av-13.0.0-cp312-cp312-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:8b9654f9261ba123377b95fd5a9214e05ba43d7545cb41a5ae2dd5ea5fe6fbc9", size = 31666294, upload-time = "2024-09-04T08:29:18.805Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/fd/ee64d545a60c73795285cbe70f27e49b46c40e1ca3c8c35411b75ea310e6/av-13.0.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8157821b9da3814720d9b7ea45d961275dc73be8161eae7258afe2f737da5779", size = 34243366, upload-time = "2024-09-04T08:29:22.423Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/49/08552c5c2b838016cbba90547a0c082e9e8b700eaaf90c8eb0c11fec595e/av-13.0.0-cp312-cp312-win_amd64.whl", hash = "sha256:736c4a9cb6ef6e5f3aa1cb12609a615f6c93bf16f36439010dc1ba160beed827", size = 25751891, upload-time = "2024-09-04T08:29:26.781Z" },
+]
+
+[[package]]
 name = "baselinereproduction"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "albumentationsx" },
+    { name = "av" },
     { name = "einops" },
     { name = "ipykernel" },
     { name = "matplotlib" },
@@ -90,6 +105,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "albumentationsx", specifier = ">=2.4.10" },
+    { name = "av", specifier = "==13.0" },
     { name = "einops", specifier = ">=0.8.2" },
     { name = "ipykernel", specifier = ">=7.3.0" },
     { name = "matplotlib", specifier = ">=3.11.2" },

@@ -94,11 +94,11 @@ class Resnet18EncoderNet(nn.Module):
 
         return h
     
-    def forward(self, img1, img2, img3, img4, face, body, gesture, posture):
-        h1 = self.encode_stream(img1)
-        h2 = self.encode_stream(img2)
-        h3 = self.encode_stream(img3)
-        h4 = self.encode_stream(img4)
+    def forward(self, inside, front, left, right, face, body, gesture, posture):
+        h1 = self.encode_stream(inside)
+        h2 = self.encode_stream(front)
+        h3 = self.encode_stream(left)
+        h4 = self.encode_stream(right)
         h_face = self.encode_stream(face)
         h_body = self.encode_stream(body)
 
@@ -211,12 +211,12 @@ class BaselineNet(nn.Module):
         
         self.dropout = nn.Dropout(p=0.5)
 
-    def forward(self, img1, img2, img3, img4, face, body, gesture, posture):
+    def forward(self, inside, front, left, right, face, body, gesture, posture):
 
-        h1 = self.marnet1(img1)
-        h2 = self.marnet2(img2)
-        h3 = self.marnet3(img3)
-        h4 = self.marnet4(img4)
+        h1 = self.marnet1(inside)
+        h2 = self.marnet2(front)
+        h3 = self.marnet3(left)
+        h4 = self.marnet4(right)
         h_face = self.marnet5(face)
         h_body = self.marnet6(body)
 
