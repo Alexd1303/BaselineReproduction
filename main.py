@@ -412,8 +412,6 @@ if __name__ == "__main__":
     
     test_dataset = CarDataset(csv_file=args.split_dir / "testing.csv", dataset_root=args.dataset_dir, horizontal_flip_prob=0.0, vertical_flip_prob=0.0)
     
-    test(model, test_dataset, args.checkpoints_dir, name=args.model_name, batch_size=1, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), num_workers=args.num_workers, save_misclassified=args.save_misclassified)
-    
     best_checkpoint_path = args.checkpoints_dir / args.model_name / f"{args.model_name}_best.pt"
     
     best_checkpoint = Checkpoint()
@@ -425,3 +423,4 @@ if __name__ == "__main__":
     model.load_state_dict(best_checkpoint.state_dict)
     
     test(model, test_dataset, args.checkpoints_dir, name=args.model_name, batch_size=1, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), num_workers=args.num_workers)
+    
