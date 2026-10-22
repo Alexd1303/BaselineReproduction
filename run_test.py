@@ -17,6 +17,7 @@ if __name__ == "__main__":
     parser.add_argument("--split_dir", type=Path, required=True, help="Directory where the dataset split files are located.")
     parser.add_argument("--checkpoint", type=Path, required=True, help="Path to the checkpoint file.")
     parser.add_argument("--num_workers", type=int, default=4, help="Number of workers for data loading.")
+    parser.add_argument("--save_misclassified", action="store_true", help="Flag to save misclassified images during testing.")
     args = parser.parse_args()
     
     if args.model_type == "MARNetOnly":
@@ -56,5 +57,5 @@ if __name__ == "__main__":
     
     model.load_state_dict(best_checkpoint.state_dict)
     
-    test(model, test_dataset, best_checkpoint_dir, name=best_checkpoint_name, batch_size=1, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), num_workers=args.num_workers)
+    test(model, test_dataset, best_checkpoint_dir, name=best_checkpoint_name, batch_size=1, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), num_workers=args.num_workers, save_misclassified=args.save_misclassified)
     

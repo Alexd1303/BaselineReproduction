@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -7,7 +8,7 @@ from torch.optim import SGD
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, ReduceLROnPlateau, SequentialLR
 from tqdm import tqdm
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 from torchmetrics import Accuracy, ConfusionMatrix
 
@@ -175,11 +176,59 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
             print("Early stopping triggered.")
             break
 
+def write_misclassified_frame(frames, index, cnt, task_name, angle, predicted_labels, confidence, true_labels, label_names: list[str], missclassified_dir: Path, frame_n: int, resize_size=(512, 512), position=(2, 408), font=None, color=(255, 0, 255)):
+    font = ImageFont.load_default(size=28)
+    
+    inside_misclassified = frames[index].cpu().numpy().transpose(1, 2, 0)[:,:,frame_n: frame_n - 3 if frame_n - 3 > 0 else None :-1]
+    img = Image.fromarray((inside_misclassified * 255).astype(np.uint8)).convert("RGB").resize(resize_size)
+    img_d = ImageDraw.Draw(img)
+    img_d.text(position, f"Inside\nTrue: {label_names[true_labels[index].item()]}\nPredicted: {label_names[predicted_labels[index].item()]} ({confidence[index].item():.2%})", fill=color, font=font, stroke_width=1, stroke_fill=(0, 0, 0))
+    img.save(missclassified_dir / task_name / str(cnt) / angle / f"{angle}_{cnt}_{index}_{frame_n}.png")
+        
+
+def save_misclassified_images(misclassified_indices, missclassified_dir: Path, cnt: int, task_name: str, predicted_labels, confidence, true_labels, label_names: list[str], inside=None, front=None, left=None, right=None, face=None, body=None):
+    missclassified_dir.mkdir(parents=True, exist_ok=True)
+    (missclassified_dir / task_name).mkdir(parents=True, exist_ok=True)
+    
+    if misclassified_indices.numel():
+        (missclassified_dir / task_name / str(cnt)).mkdir(parents=True, exist_ok=True)
+    
+    resize_size = (512, 512)
+    position = (2, 408) # bottom-left corner
+    font = ImageFont.load_default(size=28)
+    color = (255, 0, 255)
+    
+    for i in misclassified_indices:
+        if inside is not None:
+            (missclassified_dir / task_name / str(cnt) / "inside").mkdir(parents=True, exist_ok=True)
+            for frame_n in range(47, 0, -3):
+                write_misclassified_frame(inside, i, cnt, task_name, "inside", predicted_labels, confidence, true_labels, label_names, missclassified_dir, frame_n, resize_size=resize_size, position=position, font=font, color=color)
+        if front is not None: 
+            (missclassified_dir / task_name / str(cnt) / "front").mkdir(parents=True, exist_ok=True)
+            for frame_n in range(47, 0, -3):
+                write_misclassified_frame(front, i, cnt, task_name, "front", predicted_labels, confidence, true_labels, label_names, missclassified_dir, frame_n, resize_size=resize_size, position=position, font=font, color=color)
+        if left is not None:
+            (missclassified_dir / task_name / str(cnt) / "left").mkdir(parents=True, exist_ok=True)
+            for frame_n in range(47, 0, -3):
+                write_misclassified_frame(left, i, cnt, task_name, "left", predicted_labels, confidence, true_labels, label_names, missclassified_dir, frame_n, resize_size=resize_size, position=position, font=font, color=color)
+        if right is not None: 
+            (missclassified_dir / task_name / str(cnt) / "right").mkdir(parents=True, exist_ok=True)
+            for frame_n in range(47, 0, -3):
+                write_misclassified_frame(right, i, cnt, task_name, "right", predicted_labels, confidence, true_labels, label_names, missclassified_dir, frame_n, resize_size=resize_size, position=position, font=font, color=color)
+        if face is not None: 
+            (missclassified_dir / task_name / str(cnt) / "face").mkdir(parents=True, exist_ok=True)
+            for frame_n in range(47, 0, -3):
+                write_misclassified_frame(face, i, cnt, task_name, "face", predicted_labels, confidence, true_labels, label_names, missclassified_dir, frame_n, resize_size=resize_size, position=position, font=font, color=color)
+        if body is not None: 
+            (missclassified_dir / task_name / str(cnt) / "body").mkdir(parents=True, exist_ok=True)
+            for frame_n in range(47, 0, -3):
+                write_misclassified_frame(body, i, cnt, task_name, "body", predicted_labels, confidence, true_labels, label_names, missclassified_dir, frame_n, resize_size=resize_size, position=position, font=font, color=color)
+
 def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name: str, batch_size: int=24, device: torch.device = torch.device("cpu"), num_workers: int=4, save_misclassified: bool=False):
     
     checkpoints_dir = checkpoints_dir / name
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
-    
+     
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, persistent_workers=True)
     
     accuracy1 = Accuracy(task="multiclass", num_classes=5).to(device)
@@ -195,11 +244,6 @@ def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name
     model.eval()
     
     missclassified_dir = checkpoints_dir / f"{name}_misclassified"
-    missclassified_dir.mkdir(parents=True, exist_ok=True)
-    (missclassified_dir / "DER").mkdir(parents=True, exist_ok=True)
-    (missclassified_dir / "DBR").mkdir(parents=True, exist_ok=True)
-    (missclassified_dir / "TCR").mkdir(parents=True, exist_ok=True)
-    (missclassified_dir / "VBR").mkdir(parents=True, exist_ok=True)
     
     with torch.no_grad():
         for cnt, (inside, front, left, right, face, body, posture, gesture, emotion_label, behavior_label, context_label, vehicle_label) in tqdm(enumerate(test_loader), desc=f"Testing"):
@@ -221,59 +265,10 @@ def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name
             out1_test, out2_test, out3_test, out4_test = model(inside, front, left, right, face, body, gesture, posture)
             
             if save_misclassified:
-                # save misclassified images for DER as returned from the loader
-                misclassified_indices = (out1_test.argmax(dim=1) != emotion_label).nonzero(as_tuple=True)[0]
-                for i in misclassified_indices:
-                    inside_misclassified = inside[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
-                    face_misclassified = face[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
-                    body_misclassified = body[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
-
-                    # Save the misclassified images as png files
-                    Image.fromarray((inside_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "DER" / f"img4_{cnt}_{i}.png")
-                    Image.fromarray((face_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "DER" / f"face_{cnt}_{i}.png")
-                    Image.fromarray((body_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "DER" / f"body_{cnt}_{i}.png")
-                    
-                # save misclassified images for DBR as returned from the loader
-                misclassified_indices = (out2_test.argmax(dim=1) != behavior_label).nonzero(as_tuple=True)[0]
-                for i in misclassified_indices:
-                    inside_misclassified = inside[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
-                    face_misclassified = face[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
-                    body_misclassified = body[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
-
-                    # Save the misclassified images
-                    Image.fromarray((inside_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "DBR" / f"img4_{cnt}_{i}.png")
-                    Image.fromarray((face_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "DBR" / f"face_{cnt}_{i}.png")
-                    Image.fromarray((body_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "DBR" / f"body_{cnt}_{i}.png")
-                
-                # save misclassified images for TCR as returned from the loader
-                misclassified_indices = (out3_test.argmax(dim=1) != context_label).nonzero(as_tuple=True)[0]
-                for i in misclassified_indices:
-                    front_misclassified = front[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
-                    left_misclassified = left[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
-                    right_misclassified = right[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
-
-                    # Save the misclassified images
-                    Image.fromarray((front_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "TCR" / f"img1_{cnt}_{i}.png")
-                    Image.fromarray((left_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "TCR" / f"img2_{cnt}_{i}.png")
-                    Image.fromarray((right_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "TCR" / f"img3_{cnt}_{i}.png")
-                
-                # save misclassified images for VBR as returned from the loader
-                misclassified_indices = (out4_test.argmax(dim=1) != vehicle_label).nonzero(as_tuple=True)[0]
-                for i in misclassified_indices:
-                    inside_misclassified = inside[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
-                    front_misclassified = front[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
-                    left_misclassified = left[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
-                    right_misclassified = right[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
-                    face_misclassified = face[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
-                    body_misclassified = body[i].cpu().numpy().transpose(1, 2, 0)[:,:,2::-1]
-
-                    # Save the misclassified images
-                    Image.fromarray((inside_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "VBR" / f"img1_{cnt}_{i}.png")
-                    Image.fromarray((front_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "VBR" / f"img2_{cnt}_{i}.png")
-                    Image.fromarray((left_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "VBR" / f"img3_{cnt}_{i}.png")
-                    Image.fromarray((right_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "VBR" / f"img4_{cnt}_{i}.png")
-                    Image.fromarray((face_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "VBR" / f"face_{cnt}_{i}.png")
-                    Image.fromarray((body_misclassified * 255).astype(np.uint8)).convert("RGB").save(missclassified_dir / "VBR" / f"body_{cnt}_{i}.png")
+                save_misclassified_images((out1_test.argmax(dim=1) != emotion_label).nonzero(as_tuple=True)[0], missclassified_dir, cnt, "DER", out1_test.argmax(dim=1), out1_test.softmax(dim=1).max(dim=1)[0], emotion_label, EMOTION_LABEL,inside=inside, front=front, left=left, right=right, face=face, body=body)
+                save_misclassified_images((out2_test.argmax(dim=1) != behavior_label).nonzero(as_tuple=True)[0], missclassified_dir, cnt, "DBR", out2_test.argmax(dim=1), out2_test.softmax(dim=1).max(dim=1)[0], behavior_label, DRIVER_BEHAVIOR_LABEL, inside=inside, front=front, left=left, right=right, face=face, body=body)
+                save_misclassified_images((out3_test.argmax(dim=1) != context_label).nonzero(as_tuple=True)[0], missclassified_dir, cnt, "TCR", out3_test.argmax(dim=1), out3_test.softmax(dim=1).max(dim=1)[0], context_label, SCENE_CENTRIC_CONTEXT_LABEL, inside=inside, front=front, left=left, right=right, face=face, body=body)
+                save_misclassified_images((out4_test.argmax(dim=1) != vehicle_label).nonzero(as_tuple=True)[0], missclassified_dir, cnt, "VBR", out4_test.argmax(dim=1), out4_test.softmax(dim=1).max(dim=1)[0], vehicle_label, VEHICLE_BASED_CONTEXT_LABEL, inside=inside, front=front, left=left, right=right, face=face, body=body)
 
 
             
@@ -355,6 +350,8 @@ if __name__ == "__main__":
     parser.add_argument("--lr_drop_factor", type=float, default=0.1, help="Factor by which the learning rate will be reduced")
     parser.add_argument("--lr_drop_patience", type=int, default=5, help="Number of epochs with no improvement after which learning rate will be reduced")
     parser.add_argument("--save_misclassified", action="store_true", help="Flag to save misclassified images during testing")
+    parser.add_argument("--use_experimental_augmentation", action="store_true", help="Flag to use experimental augmentation techniques during training")
+    parser.add_argument("--synchronized_augmentation", action="store_true", help="Flag to synchronize augmentation across all camera views during training")
 
     args = parser.parse_args()
 
@@ -369,7 +366,7 @@ if __name__ == "__main__":
     args.checkpoints_dir.mkdir(parents=True, exist_ok=True)
     
     
-    train_dataset = CarDataset(csv_file=args.split_dir / "training.csv", dataset_root=args.dataset_dir, horizontal_flip_prob=0.5, vertical_flip_prob=0.5)
+    train_dataset = CarDataset(csv_file=args.split_dir / "training.csv", dataset_root=args.dataset_dir, horizontal_flip_prob=0.5, vertical_flip_prob=0.5, use_experimental_augmentation=args.use_experimental_augmentation, synchronize_transforms=args.synchronized_augmentation)
     val_dataset = CarDataset(csv_file=args.split_dir / "validation.csv", dataset_root=args.dataset_dir, horizontal_flip_prob=0.0, vertical_flip_prob=0.0)
     
     if args.model_type in available_models:

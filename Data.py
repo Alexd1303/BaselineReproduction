@@ -23,7 +23,7 @@ VEHICLE_BASED_CONTEXT_LABEL = ['Parking', 'Turning', 'Backward Moving', 'Changin
 
 class CarDataset(Dataset):
 
-    def __init__(self, csv_file: str, dataset_root: str, device: torch.device = torch.device("cpu"), horizontal_flip_prob: float = 0.5, vertical_flip_prob: float = 0.5):
+    def __init__(self, csv_file: str, dataset_root: str, device: torch.device = torch.device("cpu"), horizontal_flip_prob: float = 0.5, vertical_flip_prob: float = 0.5, use_experimental_augmentation: bool = False, synchronize_transforms: bool = False):
         """
         Args:
             csv_file (str): Path to the CSV file containing the dataset information.
@@ -31,6 +31,8 @@ class CarDataset(Dataset):
             device (torch.device): Device to which the data will be moved (e.g., 'cpu' or 'cuda').
             horizontal_flip_prob (float): Probability of applying horizontal flip augmentation.
             vertical_flip_prob (float): Probability of applying vertical flip augmentation.
+            use_experimental_augmentation (bool): Whether to use experimental augmentation techniques.
+            synchronize_transforms (bool): Whether to synchronize the transformations across different camera views.
         """
         self.path = pd.read_csv(csv_file).astype(str).rename(columns={'0': 'frames', '1': 'label'}).copy()
         assert os.path.exists(dataset_root), f"Dataset root directory {dataset_root} does not exist."
@@ -41,7 +43,8 @@ class CarDataset(Dataset):
         self.body_width = 224 #112
         self.face_height = 224 #64
         self.face_width = 224 #64
-
+        self.synchronize_transforms = synchronize_transforms
+        self.use_experimental_augmentation = use_experimental_augmentation
         self.device = device
         
         self.resize_imgs = A.Compose([
@@ -65,18 +68,23 @@ class CarDataset(Dataset):
         self.transform = A.Compose([
             A.HorizontalFlip(p=horizontal_flip_prob),
             A.VerticalFlip(p=vertical_flip_prob),
-            #A.ToFloat(),
-            #A.pytorch.ToTensorV2(),
         ])
+        
+        if use_experimental_augmentation:
+            self.transform = A.Compose([
+                self.transform,
+                A.AdditiveNoise(p=0.2),
+                A.RandomBrightnessContrast(p=0.2),
+                A.GaussianBlur(p=0.2),
+                A.Rotate(angle_range=(-30, 30), crop_border=True, p=0.2),
+                A.Resize(height=self.resize_height, width=self.resize_width),
+            ])
+                
 
         self.body_transform = A.Compose([
-            #A.ToFloat(),
-            #A.pytorch.ToTensorV2(),
         ])
 
         self.face_transform = A.Compose([
-            #A.ToFloat(),
-            #A.pytorch.ToTensorV2(),
         ])
 
     def __len__(self):
@@ -95,10 +103,17 @@ class CarDataset(Dataset):
 
         buffer, buffer_front, buffer_left, buffer_right, buffer_face, buffer_body, posture, gesture = self.load_frames(frames_path, pose_list)
 
-        buffer = self.transform(images=buffer)['images']
-        buffer_front = self.transform(images=buffer_front)['images']
-        buffer_left =  self.transform(images=buffer_left)['images']
-        buffer_right = self.transform(images=buffer_right)['images']
+        if self.synchronize_transforms:
+            synch_buffer = self.transform(images=torch.stack([buffer, buffer_front, buffer_left, buffer_right], dim=0).view(64, 3, 224, 224))['images']
+            buffer = synch_buffer.view(64, 3, 224, 224)[0:16, :, :, :]
+            buffer_front = synch_buffer.view(64, 3, 224, 224)[16:32, :, :, :]
+            buffer_left = synch_buffer.view(64, 3, 224, 224)[32:48, :, :, :]
+            buffer_right = synch_buffer.view(64, 3, 224, 224)[48:64, :, :, :]
+        else:
+            buffer = self.transform(images=buffer)['images']
+            buffer_front = self.transform(images=buffer_front)['images']
+            buffer_left =  self.transform(images=buffer_left)['images']
+            buffer_right = self.transform(images=buffer_right)['images']
 
         buffer_body = self.body_transform(images=buffer_body)['images']
         buffer_face = self.face_transform(images=buffer_face)['images']
@@ -192,20 +207,19 @@ class CarDataset(Dataset):
 
 
 if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = torch.device("cpu")  # For testing on CPU, change to "cuda" for GPU
-    dataset = CarDataset(csv_file=Path(r"F:/Stage Project/AIDE_dataset/training.csv"), dataset_root=Path(r"F:/Stage Project/AIDE_dataset"), device=device, horizontal_flip_prob=0.8, vertical_flip_prob=0.8)
-    test_dataloader = DataLoader(dataset, batch_size=6, shuffle=False, num_workers=6, pin_memory=True, drop_last=False)
+    device = torch.device("cpu")
+    dataset = CarDataset(csv_file=Path(r"F:/Stage Project/AIDE_dataset/training.csv"), dataset_root=Path(r"F:/Stage Project/AIDE_dataset"), device=device, horizontal_flip_prob=0.5, vertical_flip_prob=0.5, use_experimental_augmentation=True, synchronize_transforms=True)
+    test_dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=6, pin_memory=True, drop_last=False)
 
-    for epoch, (img1,img2,img3,img4,face,body,posture, gesture,emotion_label, behavior_label, context_label, vehicle_label) in enumerate(tqdm(test_dataloader)):
+    for epoch, (inside, front, left, right, face, body, posture, gesture, emotion_label, behavior_label, context_label, vehicle_label) in enumerate(tqdm(test_dataloader)):
         #print(f"Subepoch: {epoch}, img1 shape: {img1.shape}, img2 shape: {img2.shape}, img3 shape: {img3.shape}, img4 shape: {img4.shape}, face shape: {face.shape}, body shape: {body.shape}, posture shape: {posture.shape}, gesture shape: {gesture.shape}, emotion_label: {emotion_label}, behavior_label: {behavior_label}, context_label: {context_label}, vehicle_label: {vehicle_label}")
-        #for frame_n in range(img1.shape[1]):
-        #    cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img1_{epoch}_{frame_n}.jpg", img1[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
-        #    cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img2_{epoch}_{frame_n}.jpg", img2[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
-        #    cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img3_{epoch}_{frame_n}.jpg", img3[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
-        #    cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/img4_{epoch}_{frame_n}.jpg", img4[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
-        #    cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/face_{epoch}_{frame_n}.jpg", face[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
-        #    cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/body_{epoch}_{frame_n}.jpg", body[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
-        #    
-        #if epoch == 10: break
+        for frame_n in range(inside.shape[1]):
+            cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/inside_{epoch}_{frame_n}.jpg", inside[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
+            cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/front_{epoch}_{frame_n}.jpg", front[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
+            cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/left_{epoch}_{frame_n}.jpg", left[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
+            cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/right_{epoch}_{frame_n}.jpg", right[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
+            cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/face_{epoch}_{frame_n}.jpg", face[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
+            cv2.imwrite(f"F:/Stage Project/code/BaselineReproduction/dataset_test/body_{epoch}_{frame_n}.jpg", body[0, frame_n, :, :, :].permute(1, 2, 0).numpy() * 255)
+            
+        if epoch == 10: break
         pass
