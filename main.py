@@ -1,11 +1,10 @@
 import argparse
 from pathlib import Path
-from concurrent.futures import ProcessPoolExecutor
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from torch.optim import SGD
-from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, ReduceLROnPlateau, SequentialLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from tqdm import tqdm
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -44,10 +43,9 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
     lossVBR = nn.CrossEntropyLoss(label_smoothing=0.1)
     
     grad_norms = []
-    val_mAccs = []
     
     for epoch in range(start_epoch, num_epochs):
-        train_mLoss = []
+        train_loss = []
         
         model.train()
         for inside, front, left, right, face, body, posture, gesture, emotion_label, behavior_label, context_label, vehicle_label in tqdm(train_loader, desc=f"Training"):
@@ -83,11 +81,11 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
             grad_norms.append(torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0, error_if_nonfinite=True))
             optimizer.step()
             
-            train_mLoss.append(loss.item())
+            train_loss.append(loss.item())
 
         mAcc = (accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4
-        train_mLoss = sum(train_mLoss) / len(train_mLoss) if train_mLoss else float('inf')
-        log_string = f"Epoch {epoch + 1}/{num_epochs} - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {mAcc:.4f}, train_loss: {train_mLoss:.4f}, lr: {scheduler.get_last_lr()[0]:.6f}, grad_norm: {torch.stack(grad_norms).mean():.4f}"
+        train_loss = sum(train_loss) / len(train_loss) if train_loss else float('inf')
+        log_string = f"Epoch {epoch + 1}/{num_epochs} - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {mAcc:.4f}, train_loss: {train_loss:.4f}, lr: {scheduler.get_last_lr()[0]:.6f}, grad_norm: {torch.stack(grad_norms).mean():.4f}"
         print(log_string)
         with open(checkpoints_dir / f"{name}_train_log.txt", "a") as f:
             f.write(log_string + "\n")
@@ -96,8 +94,7 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
         accuracy3.reset()
         accuracy4.reset()
         
-        val_mLoss = []
-        
+        val_loss = []
         model.eval()
         with torch.no_grad():
             for inside, front, left, right, face, body, posture, gesture, emotion_label, behavior_label, context_label, vehicle_label in tqdm(val_loader, desc=f"Validation"):
@@ -126,15 +123,13 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
                     accuracy3.update(out3_val, context_label)
                     accuracy4.update(out4_val, vehicle_label)
                     
-                    val_mLoss.append((lossDER(out1_val, emotion_label).item() + lossDBR(out2_val, behavior_label).item() + lossTCR(out3_val, context_label).item() + lossVBR(out4_val, vehicle_label).item()) / 4)
-                    
-                    val_mAccs.append((accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4)
+                    val_loss.append(lossDER(out1_val, emotion_label).item() + lossDBR(out2_val, behavior_label).item() + lossTCR(out3_val, context_label).item() + lossVBR(out4_val, vehicle_label).item())
                 except Exception as e:
                     pass
         
         mAcc = (accuracy1.compute() + accuracy2.compute() + accuracy3.compute() + accuracy4.compute()) / 4
-        val_mLoss = sum(val_mLoss) / len(val_mLoss) if val_mLoss else float('inf')
-        log_string = f"Validation {epoch + 1}/{num_epochs} - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {mAcc:.4f}, val_loss: {val_mLoss:.4f}"
+        val_loss = sum(val_loss) / len(val_loss) if val_loss else float('inf')
+        log_string = f"Validation {epoch + 1}/{num_epochs} - Accuracy 1: {accuracy1.compute():.4f}, Accuracy 2: {accuracy2.compute():.4f}, Accuracy 3: {accuracy3.compute():.4f}, Accuracy 4: {accuracy4.compute():.4f}, mAcc: {mAcc:.4f}, val_loss: {val_loss:.4f}"
         print(log_string)
         with open(checkpoints_dir / f"{name}_val_log.txt", "a") as f:
             f.write(log_string + "\n")
@@ -155,7 +150,7 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
         checkpoint.val_accuracy3 = accuracy3.compute().item()
         checkpoint.val_accuracy4 = accuracy4.compute().item()
         checkpoint.val_mAcc = mAcc.item()
-        checkpoint.val_mLoss = val_mLoss
+        checkpoint.val_mLoss = val_loss
 
         torch.save(checkpoint.asdict(), checkpoint_path)
         print(f"Checkpoint saved at {checkpoint_path}")
@@ -172,7 +167,7 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
         accuracy3.reset()
         accuracy4.reset()
         
-        if epoch > warmup_epochs and early_stopper.early_stop(checkpoint, val_mLoss):
+        if epoch > warmup_epochs and early_stopper.early_stop(checkpoint, val_loss):
             print("Early stopping triggered.")
             break
 
