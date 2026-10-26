@@ -309,7 +309,7 @@ def instantiate_BaselineNet():
 
 def instantiate_CausalNet():
     from Models import CausalNet
-    return CausalNet(context_dim=512)
+    return CausalNet(context_dim=1024, alpha_blend=True)
 
 def instantiate_Resnet18EncoderNet(pretrained=True, freeze=True):
     from Models import Resnet18EncoderNet
@@ -372,6 +372,7 @@ if __name__ == "__main__":
     optimizer = SGD(model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=1e-4)
     
     warmup_epochs = 10
+    fine_tuning_epochs = 25
 
     warmup_scheduler = LinearLR(
         optimizer,
@@ -382,12 +383,18 @@ if __name__ == "__main__":
 
     cosine_scheduler = CosineAnnealingLR(
         optimizer,
-        T_max=args.num_epochs - warmup_epochs,
+        T_max=args.num_epochs - warmup_epochs - fine_tuning_epochs,
         eta_min=1e-5,
     )
 
+    fine_tuning_scheduler = LinearLR(
+        optimizer,
+        start_factor=1.0,
+        end_factor=0.1,
+        total_iters=fine_tuning_epochs,
+    )
     
-    scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, cosine_scheduler], milestones=[warmup_epochs])
+    scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, cosine_scheduler, fine_tuning_scheduler], milestones=[warmup_epochs, args.num_epochs - fine_tuning_epochs])
     
     if args.start_from_checkpoint is not None:
         checkpoint = torch.load(args.start_from_checkpoint)

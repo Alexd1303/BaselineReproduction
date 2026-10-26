@@ -2,6 +2,6 @@ from Models.Baseline.MARNetOnly import MARNetOnly, ConvNet3D, MARNetPretrainingW
 from Models.Baseline.MARNet import MARNet
 from Models.Baseline.Fusion import VGG, DBMEFusion
 from Models.Baseline.UniAD_MMTL import BaselineNet, Resnet18EncoderNet
-from Models.CausalNet import TCR_Module, DER_Module, DBR_Module, VBR_Module, CausalNet
+from Models.CausalNet import CausalNet, GRUContextCombination, DFEContextCombination, LSTMContextCombination
 
-__all__ = ['MARNetOnly', 'ConvNet3D', 'MARNet', 'VGG', 'DBMEFusion', 'BaselineNet', 'Resnet18EncoderNet', 'TCR_Module', 'DER_Module', 'DBR_Module', 'VBR_Module', 'CausalNet', 'MARNetPretrainingWrapper']
+__all__ = ['MARNetOnly', 'ConvNet3D', 'MARNet', 'VGG', 'DBMEFusion', 'BaselineNet', 'Resnet18EncoderNet', 'MARNetPretrainingWrapper', 'CausalNet', 'GRUContextCombination', 'DFEContextCombination', 'LSTMContextCombination']

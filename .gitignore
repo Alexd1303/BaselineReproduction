@@ -32,5 +32,5 @@ job_logs/
 # Utils
 dataset_checker.py
 print_curves.ipynb
-dataset_splits_class_dist.ipynb
+*.ipynb
 try_models.py
