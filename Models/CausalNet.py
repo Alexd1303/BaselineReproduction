@@ -105,7 +105,7 @@ class Causal_Module(nn.Module):
         
 
 class CausalNet(nn.Module):
-    def __init__(self, context_dim: int, alpha_blend: bool = False, contextCombinationModule: Type[ContextCombinationModule] = GRUContextCombination):
+    def __init__(self, context_dim: int, use_joints_data: bool = True, alpha_blend: bool = False, contextCombinationModule: Type[ContextCombinationModule] = GRUContextCombination):
         super().__init__()        
         self.marnet_left = MARNet()
         self.marnet_front = MARNet()
@@ -114,13 +114,22 @@ class CausalNet(nn.Module):
         self.marnet_body = MARNet()
         self.marnet_face = MARNet()
         
-        #self.gesture_conv3d = ConvNet3D(num_keypoints=42)
-        #self.posture_conv3d = ConvNet3D(num_keypoints=26)
+        self.use_joints_data = use_joints_data
+        if self.use_joints_data:
+            self.gesture_conv3d = ConvNet3D(num_keypoints=42)
+            self.posture_conv3d = ConvNet3D(num_keypoints=26)
+            
         
         self.TCR_module = Causal_Module(input_dim=1536, output_dim=3, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=512, contextCombinationModule=contextCombinationModule)
-        self.DER_module = Causal_Module(input_dim=2560 - 1024, output_dim=5, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=512, contextCombinationModule=contextCombinationModule)
-        self.DBR_module = Causal_Module(input_dim=2048 - 1024, output_dim=7, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=1024, contextCombinationModule=contextCombinationModule)
-        self.VBR_module = Causal_Module(input_dim=4096 - 1024, output_dim=5, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=1024, contextCombinationModule=contextCombinationModule)
+        
+        if self.use_joints_data:
+            self.DER_module = Causal_Module(input_dim=2560, output_dim=5, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=512, contextCombinationModule=contextCombinationModule)
+            self.DBR_module = Causal_Module(input_dim=2048, output_dim=7, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=1024, contextCombinationModule=contextCombinationModule)
+            self.VBR_module = Causal_Module(input_dim=4096, output_dim=5, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=1024, contextCombinationModule=contextCombinationModule)
+        else:
+            self.DER_module = Causal_Module(input_dim=2560 - (self.gesture_conv3d.output_dim + self.posture_conv3d.output_dim), output_dim=5, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=512, contextCombinationModule=contextCombinationModule)
+            self.DBR_module = Causal_Module(input_dim=2048 - (self.gesture_conv3d.output_dim + self.posture_conv3d.output_dim), output_dim=7, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=1024, contextCombinationModule=contextCombinationModule)
+            self.VBR_module = Causal_Module(input_dim=4096 - (self.gesture_conv3d.output_dim + self.posture_conv3d.output_dim), output_dim=5, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=1024, contextCombinationModule=contextCombinationModule)
         
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
 
@@ -131,9 +140,6 @@ class CausalNet(nn.Module):
         inside_features = self.marnet_inside(inside)
         body_features = self.marnet_body(body)
         face_features = self.marnet_face(face)
-        
-        #gesture_features = self.gesture_conv3d(gesture)
-        #posture_features = self.posture_conv3d(posture)
 
         left_g = self.avg_pool(left_features).flatten(1)
         front_g = self.avg_pool(front_features).flatten(1)
@@ -141,11 +147,19 @@ class CausalNet(nn.Module):
         inside_g = self.avg_pool(inside_features).flatten(1)
         body_g = self.avg_pool(body_features).flatten(1)
         face_g = self.avg_pool(face_features).flatten(1)
-
-        tcr_combined = torch.cat([left_g, front_g, right_g], dim=1)
-        der_combined = torch.cat([inside_g, body_g, face_g], dim=1)
-        dbr_combined = torch.cat([body_g, face_g], dim=1)
-        vbr_combined = torch.cat([left_g, front_g, right_g, inside_g, body_g, face_g], dim=1)
+        
+        if self.use_joints_data:
+            gesture_features = self.gesture_conv3d(gesture)
+            posture_features = self.posture_conv3d(posture)
+            tcr_combined = torch.cat([left_g, front_g, right_g], dim=1)
+            der_combined = torch.cat([inside_g, body_g, face_g, gesture_features, posture_features], dim=1)
+            dbr_combined = torch.cat([body_g, face_g, gesture_features, posture_features], dim=1)
+            vbr_combined = torch.cat([left_g, front_g, right_g, inside_g, body_g, face_g, gesture_features, posture_features], dim=1)
+        else:
+            tcr_combined = torch.cat([left_g, front_g, right_g], dim=1)
+            der_combined = torch.cat([inside_g, body_g, face_g], dim=1)
+            dbr_combined = torch.cat([body_g, face_g], dim=1)
+            vbr_combined = torch.cat([left_g, front_g, right_g, inside_g, body_g, face_g], dim=1)
         
         tcr_output, tcr_context = self.TCR_module(tcr_combined)
         der_output, der_context = self.DER_module(der_combined, context_embedding=tcr_context)

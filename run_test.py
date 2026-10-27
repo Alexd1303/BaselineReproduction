@@ -31,7 +31,7 @@ if __name__ == "__main__":
         model = BaselineNet()
     elif args.model_type == "causalnet":
         from Models import CausalNet
-        model = CausalNet(context_dim=1024, alpha_blend=True)
+        model = CausalNet(context_dim=512, alpha_blend=False)
     elif args.model_type == "resnet18":
         from Models import Resnet18EncoderNet
         model = Resnet18EncoderNet(pretrained=True, freeze=True)

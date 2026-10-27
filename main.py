@@ -172,12 +172,10 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
             break
 
 def write_misclassified_frame(frames, index, cnt, task_name, angle, predicted_labels, confidence, true_labels, label_names: list[str], missclassified_dir: Path, frame_n: int, resize_size=(512, 512), position=(2, 408), font=None, color=(255, 0, 255)):
-    font = ImageFont.load_default(size=28)
-    
     inside_misclassified = frames[index].cpu().numpy().transpose(1, 2, 0)[:,:,frame_n: frame_n - 3 if frame_n - 3 > 0 else None :-1]
     img = Image.fromarray((inside_misclassified * 255).astype(np.uint8)).convert("RGB").resize(resize_size)
     img_d = ImageDraw.Draw(img)
-    img_d.text(position, f"Inside\nTrue: {label_names[true_labels[index].item()]}\nPredicted: {label_names[predicted_labels[index].item()]} ({confidence[index].item():.2%})", fill=color, font=font, stroke_width=1, stroke_fill=(0, 0, 0))
+    img_d.text(position, f"{angle}\nTrue: {label_names[true_labels[index].item()]} ({confidence[0][index][-2].item():.2%})\nPredicted: {label_names[predicted_labels[index].item()]} ({confidence[0][index][-1].item():.2%})", fill=color, font=font, stroke_width=1, stroke_fill=(0, 0, 0))
     img.save(missclassified_dir / task_name / str(cnt) / angle / f"{angle}_{cnt}_{index}_{frame_n}.png")
         
 
@@ -219,12 +217,12 @@ def save_misclassified_images(misclassified_indices, missclassified_dir: Path, c
             for frame_n in range(47, 0, -3):
                 write_misclassified_frame(body, i, cnt, task_name, "body", predicted_labels, confidence, true_labels, label_names, missclassified_dir, frame_n, resize_size=resize_size, position=position, font=font, color=color)
 
-def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name: str, batch_size: int=24, device: torch.device = torch.device("cpu"), num_workers: int=4, save_misclassified: bool=False):
+def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name: str, batch_size: int=1, device: torch.device = torch.device("cpu"), num_workers: int=4, save_misclassified: bool=False):
     
     checkpoints_dir = checkpoints_dir / name
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
      
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, persistent_workers=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, persistent_workers=True, prefetch_factor=12)
     
     accuracy1 = Accuracy(task="multiclass", num_classes=5).to(device)
     accuracy2 = Accuracy(task="multiclass", num_classes=7).to(device)
@@ -260,10 +258,25 @@ def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name
             out1_test, out2_test, out3_test, out4_test = model(inside, front, left, right, face, body, gesture, posture)
             
             if save_misclassified:
-                save_misclassified_images((out1_test.argmax(dim=1) != emotion_label).nonzero(as_tuple=True)[0], missclassified_dir, cnt, "DER", out1_test.argmax(dim=1), out1_test.softmax(dim=1).max(dim=1)[0], emotion_label, EMOTION_LABEL,inside=inside, front=front, left=left, right=right, face=face, body=body)
-                save_misclassified_images((out2_test.argmax(dim=1) != behavior_label).nonzero(as_tuple=True)[0], missclassified_dir, cnt, "DBR", out2_test.argmax(dim=1), out2_test.softmax(dim=1).max(dim=1)[0], behavior_label, DRIVER_BEHAVIOR_LABEL, inside=inside, front=front, left=left, right=right, face=face, body=body)
-                save_misclassified_images((out3_test.argmax(dim=1) != context_label).nonzero(as_tuple=True)[0], missclassified_dir, cnt, "TCR", out3_test.argmax(dim=1), out3_test.softmax(dim=1).max(dim=1)[0], context_label, SCENE_CENTRIC_CONTEXT_LABEL, inside=inside, front=front, left=left, right=right, face=face, body=body)
-                save_misclassified_images((out4_test.argmax(dim=1) != vehicle_label).nonzero(as_tuple=True)[0], missclassified_dir, cnt, "VBR", out4_test.argmax(dim=1), out4_test.softmax(dim=1).max(dim=1)[0], vehicle_label, VEHICLE_BASED_CONTEXT_LABEL, inside=inside, front=front, left=left, right=right, face=face, body=body)
+                emotion_indices = (out1_test.argmax(dim=1) != emotion_label).nonzero(as_tuple=True)[0]
+                behavior_indices = (out2_test.argmax(dim=1) != behavior_label).nonzero(as_tuple=True)[0]
+                context_indices = (out3_test.argmax(dim=1) != context_label).nonzero(as_tuple=True)[0]
+                vehicle_indices = (out4_test.argmax(dim=1) != vehicle_label).nonzero(as_tuple=True)[0]
+                
+                emotion_predicted = out1_test.argmax(dim=1)
+                behavior_predicted = out2_test.argmax(dim=1)
+                context_predicted = out3_test.argmax(dim=1)
+                vehicle_predicted = out4_test.argmax(dim=1)
+                
+                emotion_confidence = out1_test.softmax(dim=1).sort(dim=1)
+                behavior_confidence = out2_test.softmax(dim=1).sort(dim=1)
+                context_confidence = out3_test.softmax(dim=1).sort(dim=1)
+                vehicle_confidence = out4_test.softmax(dim=1).sort(dim=1)
+                
+                save_misclassified_images(emotion_indices, missclassified_dir, cnt, "DER", emotion_predicted, emotion_confidence, emotion_label, EMOTION_LABEL, inside=inside, front=front, left=left, right=right, face=face, body=body)
+                save_misclassified_images(behavior_indices, missclassified_dir, cnt, "DBR", behavior_predicted, behavior_confidence, behavior_label, DRIVER_BEHAVIOR_LABEL, inside=inside, front=front, left=left, right=right, face=face, body=body)
+                save_misclassified_images(context_indices, missclassified_dir, cnt, "TCR", context_predicted, context_confidence, context_label, SCENE_CENTRIC_CONTEXT_LABEL, inside=inside, front=front, left=left, right=right, face=face, body=body)
+                save_misclassified_images(vehicle_indices, missclassified_dir, cnt, "VBR", vehicle_predicted, vehicle_confidence, vehicle_label, VEHICLE_BASED_CONTEXT_LABEL, inside=inside, front=front, left=left, right=right, face=face, body=body)
 
 
             
@@ -384,13 +397,13 @@ if __name__ == "__main__":
     cosine_scheduler = CosineAnnealingLR(
         optimizer,
         T_max=args.num_epochs - warmup_epochs - fine_tuning_epochs,
-        eta_min=1e-5,
+        eta_min=1e-4,
     )
 
     fine_tuning_scheduler = LinearLR(
         optimizer,
-        start_factor=1.0,
-        end_factor=0.1,
+        start_factor=1e-3,
+        end_factor=1e-3,
         total_iters=fine_tuning_epochs,
     )
     
