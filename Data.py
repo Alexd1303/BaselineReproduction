@@ -75,7 +75,7 @@ class CarDataset(Dataset):
                 self.transform,
                 A.AdditiveNoise(p=0.2),
                 A.RandomBrightnessContrast(p=0.2),
-                A.GaussianBlur(p=0.2),
+                #A.GaussianBlur(p=0.2),
                 A.Rotate(angle_range=(-30, 30), crop_border=True, p=0.2),
                 A.Resize(height=self.resize_height, width=self.resize_width),
             ])

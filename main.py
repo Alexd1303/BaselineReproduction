@@ -55,10 +55,9 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
             right = right.view(-1, 48, 224, 224).to(device, non_blocking=True)
             face = face.view(-1, 48, 224, 224).to(device, non_blocking=True)
             body = body.view(-1, 48, 224, 224).to(device, non_blocking=True)
-            #gesture = gesture.view(batch_size, 3, 16, 42, 1).to(device, non_blocking=True)
-            #posture = posture.view(batch_size, 3, 16, 26, 1).to(device, non_blocking=True)
             gesture = gesture.permute(0, 3, 1, 2).unsqueeze(-1).contiguous().to(device, non_blocking=True)
             posture = posture.permute(0, 3, 1, 2).unsqueeze(-1).contiguous().to(device, non_blocking=True)
+            
             emotion_label = emotion_label.to(device, non_blocking=True)
             behavior_label = behavior_label.to(device, non_blocking=True)
             context_label = context_label.to(device, non_blocking=True)
@@ -105,9 +104,6 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
                     right = right.view(-1, 48, 224, 224).to(device, non_blocking=True)
                     face = face.view(-1, 48, 224, 224).to(device, non_blocking=True)
                     body = body.view(-1, 48, 224, 224).to(device, non_blocking=True)
-                    
-                    #gesture = gesture.view(batch_size, 3, 16, 42, 1).to(device, non_blocking=True)
-                    #posture = posture.view(batch_size, 3, 16, 26, 1).to(device, non_blocking=True)
                     gesture = gesture.permute(0, 3, 1, 2).unsqueeze(-1).contiguous().to(device, non_blocking=True)
                     posture = posture.permute(0, 3, 1, 2).unsqueeze(-1).contiguous().to(device, non_blocking=True)
                     
@@ -246,8 +242,6 @@ def test(model: nn.Module, test_dataset: CarDataset, checkpoints_dir: Path, name
             right = right.view(-1, 48, 224, 224).to(device, non_blocking=True)
             face = face.view(-1, 48, 224, 224).to(device, non_blocking=True)
             body = body.view(-1, 48, 224, 224).to(device, non_blocking=True)
-            #gesture = gesture.view(batch_size, 3, 16, 42, 1).to(device, non_blocking=True)
-            #posture = posture.view(batch_size, 3, 16, 26, 1).to(device, non_blocking=True)
             gesture = gesture.permute(0, 3, 1, 2).unsqueeze(-1).contiguous().to(device, non_blocking=True)
             posture = posture.permute(0, 3, 1, 2).unsqueeze(-1).contiguous().to(device, non_blocking=True)
             emotion_label = emotion_label.to(device, non_blocking=True)
@@ -321,8 +315,9 @@ def instantiate_BaselineNet():
     return BaselineNet()
 
 def instantiate_CausalNet():
-    from Models import CausalNet
-    return CausalNet(context_dim=1024, alpha_blend=True)
+    from Models import CausalNet, GRUContextCombination, FiLMContextCombination, DFEContextCombination, LSTMContextCombination
+    from Models import Encoder, Resnet18Encoder, MARNetEncoder
+    return CausalNet(context_dim=512, use_joints_data=False, alpha_blend=False, encoder=Resnet18Encoder, pretrained_encoder=True, freeze_encoder=True, contextCombinationModule=GRUContextCombination)
 
 def instantiate_Resnet18EncoderNet(pretrained=True, freeze=True):
     from Models import Resnet18EncoderNet
@@ -385,7 +380,7 @@ if __name__ == "__main__":
     optimizer = SGD(model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=1e-4)
     
     warmup_epochs = 10
-    fine_tuning_epochs = 25
+    fine_tuning_epochs = 20
 
     warmup_scheduler = LinearLR(
         optimizer,

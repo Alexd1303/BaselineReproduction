@@ -1,21 +1,90 @@
 from abc import ABC, abstractmethod
-from typing import Optional, override, Type
+from typing import Optional, override, Type, Any, Tuple
 
 import torch
 from torch import nn
 
-import numpy as np
-
 from Models.Baseline.MARNet import MARNet
 from Models.Baseline.MARNetOnly import ConvNet3D
+
+from Models.Encoders import Encoder, Resnet18Encoder, MARNetEncoder
+
 
 class ContextCombinationModule(nn.Module, ABC):
     def __init__(self, input_dim, context_dim):
         super().__init__()
+        self.input_dim = input_dim
+        self.context_dim = context_dim
 
     @abstractmethod
-    def forward(self, x, embedding):
+    def forward(self, x, embedding) -> Any:
         ...
+
+
+class FiLMContextCombination(ContextCombinationModule):
+    """
+    FiLM (Feature-wIse Linear Modulation) context combination module.
+    This module applies feature-wise linear modulation to the input features based on the context embedding.
+    
+    Args:
+        input_dim (int): Dimension of the input features (d_B).
+        context_dim (int): Dimension of the context embedding (d_A).
+        hidden (int, optional): Dimension of the hidden layer. If None, it will be set to the same as context_dim.
+        gamma_scale (float): Scale factor for the gamma parameter in FiLM.
+    """
+    def __init__(self, input_dim, context_dim, hidden=None, gamma_scale=1.0):
+        super().__init__(input_dim, context_dim)
+        hidden = hidden or input_dim
+        self.net = nn.Sequential(
+            nn.Linear(context_dim, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, 2 * input_dim),
+        )
+        self.norm = nn.LayerNorm(input_dim, elementwise_affine=False)
+        self.gamma_scale = gamma_scale
+
+        # Identity initialization: at the beginning, the input is not altered by the context
+        nn.init.zeros_(self.net[-1].weight)
+        nn.init.zeros_(self.net[-1].bias)
+        
+        self.projection = nn.Linear(input_dim, context_dim)
+
+    @override
+    def forward(self, x, embedding):
+        gb = self.net(embedding)                       # [B, 2*d_B]
+        gamma, beta = gb.chunk(2, dim=-1)        # [B, d_B] each
+        gamma = self.gamma_scale * torch.tanh(gamma)   # limits the modulation
+
+        if x.dim() == 3:                       # sequence: broadcast over tokens
+            gamma, beta = gamma.unsqueeze(1), beta.unsqueeze(1)
+
+        x = self.norm(x)                     # normalize before modulating
+        out = self.projection((1 + gamma) * x + beta)
+        return out
+
+
+class CrossAttentionContextCombination(ContextCombinationModule):
+    def __init__(self, input_dim, context_dim, num_heads=4, feture_dim=512):
+        super().__init__(input_dim, context_dim)
+
+        self.cross_attention = nn.MultiheadAttention(embed_dim=feture_dim, num_heads=num_heads, batch_first=True)
+        self.projection = nn.Linear(feture_dim, context_dim)
+
+    @override
+    def forward(self, x, embedding):
+        N = self.input_dim // 512
+        x = x.reshape(x.size(0), N, 512)
+
+        # embedding = self.context_projection(embedding)
+        embedding = embedding.unsqueeze(1)  # Add sequence dimension for attention
+
+        attn_output, _ = self.cross_attention(query=embedding, key=x, value=x, need_weights=False)
+
+        attn_output = attn_output.squeeze(1)  # Remove sequence dimension
+
+        out = self.projection(attn_output)
+        return out
+
 
 class DFEContextCombination(ContextCombinationModule):
     def __init__(self, input_dim, context_dim):
@@ -105,14 +174,15 @@ class Causal_Module(nn.Module):
         
 
 class CausalNet(nn.Module):
-    def __init__(self, context_dim: int, use_joints_data: bool = True, alpha_blend: bool = False, contextCombinationModule: Type[ContextCombinationModule] = GRUContextCombination):
+    def __init__(self, context_dim: int, use_joints_data: bool = True, alpha_blend: bool = False, encoder: Type[Encoder] = MARNetEncoder, pretrained_encoder: bool = False, freeze_encoder: bool = False, contextCombinationModule: Type[ContextCombinationModule] = GRUContextCombination):
         super().__init__()        
-        self.marnet_left = MARNet()
-        self.marnet_front = MARNet()
-        self.marnet_right = MARNet()
-        self.marnet_inside = MARNet()
-        self.marnet_body = MARNet()
-        self.marnet_face = MARNet()
+        self.encoder = encoder(pretrained=pretrained_encoder, freeze=freeze_encoder)
+        
+        self.freeze_encoder = freeze_encoder
+        
+        if self.freeze_encoder:
+            for param in self.encoder.parameters():
+                param.requires_grad = False
         
         self.use_joints_data = use_joints_data
         if self.use_joints_data:
@@ -127,19 +197,19 @@ class CausalNet(nn.Module):
             self.DBR_module = Causal_Module(input_dim=2048, output_dim=7, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=1024, contextCombinationModule=contextCombinationModule)
             self.VBR_module = Causal_Module(input_dim=4096, output_dim=5, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=1024, contextCombinationModule=contextCombinationModule)
         else:
-            self.DER_module = Causal_Module(input_dim=2560 - (self.gesture_conv3d.output_dim + self.posture_conv3d.output_dim), output_dim=5, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=512, contextCombinationModule=contextCombinationModule)
-            self.DBR_module = Causal_Module(input_dim=2048 - (self.gesture_conv3d.output_dim + self.posture_conv3d.output_dim), output_dim=7, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=1024, contextCombinationModule=contextCombinationModule)
-            self.VBR_module = Causal_Module(input_dim=4096 - (self.gesture_conv3d.output_dim + self.posture_conv3d.output_dim), output_dim=5, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=1024, contextCombinationModule=contextCombinationModule)
+            self.DER_module = Causal_Module(input_dim=1536, output_dim=5, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=512, contextCombinationModule=contextCombinationModule)
+            self.DBR_module = Causal_Module(input_dim=1024, output_dim=7, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=1024, contextCombinationModule=contextCombinationModule)
+            self.VBR_module = Causal_Module(input_dim=3072, output_dim=5, context_dim=context_dim, alpha_blend=alpha_blend, alpha_projection_dim=1024, contextCombinationModule=contextCombinationModule)
         
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
 
     def forward(self, inside, front, left, right, face, body, gesture, posture):
-        left_features = self.marnet_left(left)
-        front_features = self.marnet_front(front)
-        right_features = self.marnet_right(right)
-        inside_features = self.marnet_inside(inside)
-        body_features = self.marnet_body(body)
-        face_features = self.marnet_face(face)
+        left_features = self.encoder(left)
+        front_features = self.encoder(front)
+        right_features = self.encoder(right)
+        inside_features = self.encoder(inside)
+        body_features = self.encoder(body)
+        face_features = self.encoder(face)
 
         left_g = self.avg_pool(left_features).flatten(1)
         front_g = self.avg_pool(front_features).flatten(1)
@@ -167,3 +237,10 @@ class CausalNet(nn.Module):
         vbr_output, vbr_context = self.VBR_module(vbr_combined, context_embedding=dbr_context)
         
         return der_output, dbr_output, tcr_output, vbr_output
+    
+    def train(self, mode: bool = True):
+        super().train(mode)
+        if self.freeze_encoder:
+            self.encoder.eval()
+        return self
+    

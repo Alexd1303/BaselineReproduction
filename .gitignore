@@ -34,3 +34,4 @@ dataset_checker.py
 print_curves.ipynb
 *.ipynb
 try_models.py
+film.py

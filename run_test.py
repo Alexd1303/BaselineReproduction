@@ -30,8 +30,9 @@ if __name__ == "__main__":
         from Models import BaselineNet
         model = BaselineNet()
     elif args.model_type == "causalnet":
-        from Models import CausalNet
-        model = CausalNet(context_dim=512, alpha_blend=False)
+        from Models import CausalNet, GRUContextCombination, FiLMContextCombination, DFEContextCombination, LSTMContextCombination
+        from Models import Encoder, Resnet18Encoder, MARNetEncoder
+        model = CausalNet(context_dim=512, use_joints_data=True, alpha_blend=False, encoder=Resnet18Encoder, pretrained_encoder=True, freeze_encoder=True, contextCombinationModule=FiLMContextCombination)
     elif args.model_type == "resnet18":
         from Models import Resnet18EncoderNet
         model = Resnet18EncoderNet(pretrained=True, freeze=True)
