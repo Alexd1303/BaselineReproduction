@@ -316,8 +316,8 @@ def instantiate_BaselineNet():
 
 def instantiate_CausalNet():
     from Models import CausalNet, GRUContextCombination, FiLMContextCombination, DFEContextCombination, LSTMContextCombination
-    from Models import Encoder, Resnet18Encoder, MARNetEncoder
-    return CausalNet(context_dim=512, use_joints_data=False, alpha_blend=False, encoder=Resnet18Encoder, pretrained_encoder=True, freeze_encoder=True, contextCombinationModule=GRUContextCombination)
+    from Models import Encoder, Resnet18Encoder, MARNetEncoder, MobileNetV3Encoder
+    return CausalNet(context_dim=512, use_joints_data=False, alpha_blend=False, encoder=MobileNetV3Encoder, pretrained_encoder=True, freeze_encoder=True, contextCombinationModule=FiLMContextCombination)
 
 def instantiate_Resnet18EncoderNet(pretrained=True, freeze=True):
     from Models import Resnet18EncoderNet

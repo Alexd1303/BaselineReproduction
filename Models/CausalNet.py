@@ -36,9 +36,9 @@ class FiLMContextCombination(ContextCombinationModule):
         super().__init__(input_dim, context_dim)
         hidden = hidden or input_dim
         self.net = nn.Sequential(
-            nn.Linear(context_dim, hidden),
-            nn.GELU(),
-            nn.Linear(hidden, 2 * input_dim),
+            #nn.Linear(context_dim, hidden),
+            #nn.GELU(),
+            nn.Linear(context_dim, 2 * input_dim),
         )
         self.norm = nn.LayerNorm(input_dim, elementwise_affine=False)
         self.gamma_scale = gamma_scale
@@ -243,4 +243,38 @@ class CausalNet(nn.Module):
         if self.freeze_encoder:
             self.encoder.eval()
         return self
-    
+
+
+class CausalNetLateFusion(CausalNet):
+    def __init__(self, context_dim: int, use_joints_data: bool = True, alpha_blend: bool = False, encoder: Type[Encoder] = MARNetEncoder, pretrained_encoder: bool = False, freeze_encoder: bool = False, contextCombinationModule: Type[ContextCombinationModule] = GRUContextCombination):
+        super().__init__(context_dim, use_joints_data, alpha_blend, encoder, pretrained_encoder, freeze_encoder, contextCombinationModule)
+
+    def forward(self, inside, front, left, right, face, body, gesture, posture):
+        der_outputs = []
+        dbr_outputs = []
+        tcr_outputs = []
+        vbr_outputs = []
+
+        for frame_n in range(0, 48, 3):
+            inside_frame = inside[:, frame_n: frame_n + 3]
+            front_frame = front[:, frame_n: frame_n + 3]
+            left_frame = left[:, frame_n: frame_n + 3]
+            right_frame = right[:, frame_n: frame_n + 3]
+            face_frame = face[:, frame_n: frame_n + 3]
+            body_frame = body[:, frame_n: frame_n + 3]
+            gesture_frame = gesture[:, frame_n: frame_n + 3] if self.use_joints_data else None
+            posture_frame = posture[:, frame_n: frame_n + 3] if self.use_joints_data else None
+
+            der_output, dbr_output, tcr_output, vbr_output = super().forward(inside_frame, front_frame, left_frame, right_frame, face_frame, body_frame, gesture_frame, posture_frame)
+            der_outputs.append(der_output)
+            dbr_outputs.append(dbr_output)
+            tcr_outputs.append(tcr_output)
+            vbr_outputs.append(vbr_output)
+
+        der_output = torch.stack(der_outputs, dim=1).mean(dim=1)
+        dbr_output = torch.stack(dbr_outputs, dim=1).mean(dim=1)
+        tcr_output = torch.stack(tcr_outputs, dim=1).mean(dim=1)
+        vbr_output = torch.stack(vbr_outputs, dim=1).mean(dim=1)
+
+        return der_output, dbr_output, tcr_output, vbr_output
+
