@@ -141,7 +141,6 @@ class MobileNetV3Encoder(Encoder):
 
         h = h.mean(dim=1)
         h = self.conv1x1(h)
-        print("MobileNetV3Encoder output shape:", h.shape)
 
         return h
     
