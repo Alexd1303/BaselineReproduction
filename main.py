@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+from typing import List
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -15,7 +16,7 @@ from Data import CarDataset, EMOTION_LABEL, DRIVER_BEHAVIOR_LABEL, SCENE_CENTRIC
 
 from Utils import Checkpoint, EarlyStopper, plot_confusion_matrix
 
-def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: SequentialLR, train_dataset: CarDataset, val_dataset: CarDataset, checkpoints_dir: Path, name: str,start_epoch: int=0, num_epochs: int=10, batch_size: int=24, device: torch.device = torch.device("cpu"), num_workers: int=4):
+def train(model: nn.Module, optimizer: torch.optim.Optimizer | List[torch.optim.Optimizer], scheduler: SequentialLR, train_dataset: CarDataset, val_dataset: CarDataset, checkpoints_dir: Path, name: str,start_epoch: int=0, num_epochs: int=10, batch_size: int=24, device: torch.device = torch.device("cpu"), num_workers: int=4):
     
     checkpoints_dir = checkpoints_dir / name
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
@@ -63,7 +64,9 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
             context_label = context_label.to(device, non_blocking=True)
             vehicle_label = vehicle_label.to(device, non_blocking=True)
 
-            model.zero_grad()
+            for opt in optimizer:
+                opt.zero_grad()
+
             out1, out2, out3, out4 = model(inside, front, left, right, face, body, gesture, posture)
             
             accuracy1.update(out1, emotion_label)
@@ -78,7 +81,8 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
             loss = loss1 + loss2 + loss3 + loss4
             loss.backward()
             grad_norms.append(torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0, error_if_nonfinite=True))
-            optimizer.step()
+            for opt in optimizer:
+                opt.step()
             
             train_loss.append(loss.item())
 
@@ -137,7 +141,8 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
         
         checkpoint = Checkpoint()
         checkpoint.state_dict = model.state_dict()
-        checkpoint.optimizer_state_dict = optimizer.state_dict()
+        checkpoint.optimizer_state_dict = optimizer[1].state_dict()
+        # TODO Add to checkpoint the state of all optimizers if multiple optimizers are used
         checkpoint.scheduler_state_dict = scheduler.state_dict()
         checkpoint.epoch = epoch
         checkpoint.name = name
@@ -316,8 +321,8 @@ def instantiate_BaselineNet():
 
 def instantiate_CausalNet():
     from Models import CausalNet, GRUContextCombination, FiLMContextCombination, DFEContextCombination, LSTMContextCombination
-    from Models import Encoder, Resnet18Encoder, MARNetEncoder
-    return CausalNet(context_dim=512, use_joints_data=False, alpha_blend=False, encoder=Resnet18Encoder, pretrained_encoder=True, freeze_encoder=True, contextCombinationModule=GRUContextCombination)
+    from Models import Encoder, Resnet18Encoder, MARNetEncoder, MobileNetV3Encoder
+    return CausalNet(context_dim=512, use_joints_data=False, alpha_blend=False, encoder=MobileNetV3Encoder, pretrained_encoder=True, freeze_encoder=False, contextCombinationModule=FiLMContextCombination)
 
 def instantiate_Resnet18EncoderNet(pretrained=True, freeze=True):
     from Models import Resnet18EncoderNet
@@ -377,40 +382,57 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"Invalid model type. Please choose one of: {', '.join(available_models.keys())}.")
 
-    optimizer = SGD(model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=1e-4)
+    encoder_optimizer = SGD(
+        model.encoder.parameters(),
+        lr=1e-5,
+        momentum=0.9,
+        weight_decay=1e-4,
+    )
+
+    causal_optimizer = SGD(
+        [
+            {'params': model.TCR_module.parameters()},
+            {'params': model.DER_module.parameters()},
+            {'params': model.DBR_module.parameters()},
+            {'params': model.VBR_module.parameters()},
+        ],
+        lr=args.learning_rate,
+        momentum=0.9,
+        weight_decay=1e-4,
+    )
     
     warmup_epochs = 10
     fine_tuning_epochs = 20
 
     warmup_scheduler = LinearLR(
-        optimizer,
+        causal_optimizer,
         start_factor=0.1,
         end_factor=1.0,
         total_iters=warmup_epochs,
     )
 
     cosine_scheduler = CosineAnnealingLR(
-        optimizer,
+        causal_optimizer,
         T_max=args.num_epochs - warmup_epochs - fine_tuning_epochs,
         eta_min=1e-4,
     )
 
     fine_tuning_scheduler = LinearLR(
-        optimizer,
+        causal_optimizer,
         start_factor=1e-3,
         end_factor=1e-3,
         total_iters=fine_tuning_epochs,
     )
     
-    scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, cosine_scheduler, fine_tuning_scheduler], milestones=[warmup_epochs, args.num_epochs - fine_tuning_epochs])
+    scheduler = SequentialLR(causal_optimizer, schedulers=[warmup_scheduler, cosine_scheduler, fine_tuning_scheduler], milestones=[warmup_epochs, args.num_epochs - fine_tuning_epochs])
     
     if args.start_from_checkpoint is not None:
         checkpoint = torch.load(args.start_from_checkpoint)
         model.load_state_dict(checkpoint['state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        causal_optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         
-        for state in optimizer.state.values():
+        for state in causal_optimizer.state.values():
             for k, v in state.items():
                 if isinstance(v, torch.Tensor):
                     state[k] = v.to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
@@ -418,7 +440,7 @@ if __name__ == "__main__":
     else:
         start_epoch = 0
         
-    train(model, optimizer, scheduler, train_dataset, val_dataset, args.checkpoints_dir, name=args.model_name, start_epoch=start_epoch, num_epochs=args.num_epochs, batch_size=args.batch_size, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), num_workers=args.num_workers)
+    train(model, [encoder_optimizer, causal_optimizer], scheduler, train_dataset, val_dataset, args.checkpoints_dir, name=args.model_name, start_epoch=start_epoch, num_epochs=args.num_epochs, batch_size=args.batch_size, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), num_workers=args.num_workers)
     
     test_dataset = CarDataset(csv_file=args.split_dir / "testing.csv", dataset_root=args.dataset_dir, horizontal_flip_prob=0.0, vertical_flip_prob=0.0)
     
