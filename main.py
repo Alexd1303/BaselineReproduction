@@ -15,6 +15,9 @@ from Data import CarDataset, EMOTION_LABEL, DRIVER_BEHAVIOR_LABEL, SCENE_CENTRIC
 
 from Utils import Checkpoint, EarlyStopper, plot_confusion_matrix
 
+import cv2
+cv2.setNumThreads(0)
+
 def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: SequentialLR, train_dataset: CarDataset, val_dataset: CarDataset, checkpoints_dir: Path, name: str,start_epoch: int=0, num_epochs: int=10, batch_size: int=24, device: torch.device = torch.device("cpu"), num_workers: int=4):
     
     checkpoints_dir = checkpoints_dir / name
@@ -315,9 +318,9 @@ def instantiate_BaselineNet():
     return BaselineNet()
 
 def instantiate_CausalNet():
-    from Models import CausalNet, GRUContextCombination, FiLMContextCombination, DFEContextCombination, LSTMContextCombination
+    from Models import CausalNet, CausalNetLateFusion, GRUContextCombination, FiLMContextCombination, DFEContextCombination, LSTMContextCombination
     from Models import Encoder, Resnet18Encoder, MARNetEncoder, MobileNetV3Encoder
-    return CausalNet(context_dim=512, use_joints_data=False, alpha_blend=False, encoder=MobileNetV3Encoder, pretrained_encoder=True, freeze_encoder=True, contextCombinationModule=FiLMContextCombination)
+    return CausalNetLateFusion(context_dim=256, use_joints_data=False, alpha_blend=False, encoder=MobileNetV3Encoder, pretrained_encoder=True, freeze_encoder=True, contextCombinationModule=FiLMContextCombination)
 
 def instantiate_Resnet18EncoderNet(pretrained=True, freeze=True):
     from Models import Resnet18EncoderNet
