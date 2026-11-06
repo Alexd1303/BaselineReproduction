@@ -19,6 +19,8 @@ import cv2
 cv2.setNumThreads(0)
 
 def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: SequentialLR, train_dataset: CarDataset, val_dataset: CarDataset, checkpoints_dir: Path, name: str,start_epoch: int=0, num_epochs: int=10, batch_size: int=24, device: torch.device = torch.device("cpu"), num_workers: int=4):
+
+    lambda_graph = 0.001
     
     checkpoints_dir = checkpoints_dir / name
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
@@ -78,7 +80,7 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
             loss2 = lossDBR(out2, behavior_label)
             loss3 = lossTCR(out3, context_label)
             loss4 = lossVBR(out4, vehicle_label)
-            loss = loss1 + loss2 + loss3 + loss4
+            loss = loss1 + loss2 + loss3 + loss4 + lambda_graph * model.adjacency_matrix.sum()
             loss.backward()
             grad_norms.append(torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0, error_if_nonfinite=True))
             optimizer.step()
@@ -318,9 +320,9 @@ def instantiate_BaselineNet():
     return BaselineNet()
 
 def instantiate_CausalNet():
-    from Models import CausalNet, CausalNetLateFusion, GRUContextCombination, FiLMContextCombination, DFEContextCombination, LSTMContextCombination
+    from Models import CausalNet, CausalNetLateFusion, CausalNetGraph, GRUContextCombination, FiLMContextCombination, DFEContextCombination, LSTMContextCombination
     from Models import Encoder, Resnet18Encoder, MARNetEncoder, MobileNetV3Encoder
-    return CausalNetLateFusion(context_dim=256, use_joints_data=False, alpha_blend=False, encoder=MobileNetV3Encoder, pretrained_encoder=True, freeze_encoder=True, contextCombinationModule=FiLMContextCombination)
+    return CausalNetGraph(context_dim=256, use_joints_data=False, alpha_blend=False, encoder=MobileNetV3Encoder, pretrained_encoder=True, freeze_encoder=True, contextCombinationModule=FiLMContextCombination)
 
 def instantiate_Resnet18EncoderNet(pretrained=True, freeze=True):
     from Models import Resnet18EncoderNet

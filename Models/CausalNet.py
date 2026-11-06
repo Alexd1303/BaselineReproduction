@@ -21,6 +21,14 @@ class ContextCombinationModule(nn.Module, ABC):
         ...
 
 
+class IdentityContextCombination(ContextCombinationModule):
+    def __init__(self, input_dim, context_dim):
+        super().__init__(input_dim, context_dim)
+
+    @override
+    def forward(self, x, embedding):
+        return embedding
+
 class FiLMContextCombination(ContextCombinationModule):
     """
     FiLM (Feature-wIse Linear Modulation) context combination module.
@@ -44,8 +52,8 @@ class FiLMContextCombination(ContextCombinationModule):
         self.gamma_scale = gamma_scale
 
         # Identity initialization: at the beginning, the input is not altered by the context
-        nn.init.zeros_(self.net[-1].weight)
-        nn.init.zeros_(self.net[-1].bias)
+        nn.init.zeros_(self.net[0].weight)
+        nn.init.zeros_(self.net[0].bias)
         
         self.projection = nn.Linear(input_dim, context_dim)
 
@@ -231,10 +239,10 @@ class CausalNet(nn.Module):
             dbr_combined = torch.cat([body_g, face_g], dim=1)
             vbr_combined = torch.cat([left_g, front_g, right_g, inside_g, body_g, face_g], dim=1)
         
-        tcr_output, tcr_context = self.TCR_module(tcr_combined)
-        der_output, der_context = self.DER_module(der_combined, context_embedding=tcr_context)
-        dbr_output, dbr_context = self.DBR_module(dbr_combined, context_embedding=der_context)
-        vbr_output, vbr_context = self.VBR_module(vbr_combined, context_embedding=dbr_context)
+        tcr_output, tcr_context = self.TCR_module(tcr_combined)#.detach()
+        der_output, der_context = self.DER_module(der_combined, context_embedding=tcr_context)#.detach()
+        dbr_output, dbr_context = self.DBR_module(dbr_combined, context_embedding=der_context)#.detach()
+        vbr_output, vbr_context = self.VBR_module(vbr_combined, context_embedding=dbr_context)#.detach()
         
         return der_output, dbr_output, tcr_output, vbr_output
     
@@ -278,3 +286,88 @@ class CausalNetLateFusion(CausalNet):
 
         return der_output, dbr_output, tcr_output, vbr_output
 
+
+class CausalNetGraph(CausalNet):
+    def __init__(self, context_dim: int, use_joints_data: bool = True, alpha_blend: bool = False, encoder: Type[Encoder] = MARNetEncoder, pretrained_encoder: bool = False, freeze_encoder: bool = False, contextCombinationModule: Type[ContextCombinationModule] = GRUContextCombination):
+        super().__init__(context_dim, use_joints_data, alpha_blend, encoder, pretrained_encoder, freeze_encoder, contextCombinationModule)
+        self.adjacency_matrix = nn.Parameter(torch.full((4, 4), -2.0), requires_grad=True)  # Learnable adjacency matrix for the graph
+        self.tcr_proj = nn.Linear(3, 32)
+        self.der_proj = nn.Linear(5, 32)
+        self.dbr_proj = nn.Linear(7, 32)
+        self.vbr_proj = nn.Linear(5, 32)
+        self.norm_layer = nn.LayerNorm(32, elementwise_affine=False)
+        self.tcr_backproj = nn.Linear(32, 3)
+        self.der_backproj = nn.Linear(32, 5)
+        self.dbr_backproj = nn.Linear(32, 7)
+        self.vbr_backproj = nn.Linear(32, 5)
+
+    def forward(self, inside, front, left, right, face, body, gesture, posture):
+        left_features = self.encoder(left)
+        front_features = self.encoder(front)
+        right_features = self.encoder(right)
+        inside_features = self.encoder(inside)
+        body_features = self.encoder(body)
+        face_features = self.encoder(face)
+
+        left_g = self.avg_pool(left_features).flatten(1)
+        front_g = self.avg_pool(front_features).flatten(1)
+        right_g = self.avg_pool(right_features).flatten(1)
+        inside_g = self.avg_pool(inside_features).flatten(1)
+        body_g = self.avg_pool(body_features).flatten(1)
+        face_g = self.avg_pool(face_features).flatten(1)
+
+        if self.use_joints_data:
+            gesture_features = self.gesture_conv3d(gesture)
+            posture_features = self.posture_conv3d(posture)
+            tcr_combined = torch.cat([left_g, front_g, right_g], dim=1)
+            der_combined = torch.cat([inside_g, body_g, face_g, gesture_features, posture_features], dim=1)
+            dbr_combined = torch.cat([body_g, face_g, gesture_features, posture_features], dim=1)
+            vbr_combined = torch.cat([left_g, front_g, right_g, inside_g, body_g, face_g, gesture_features, posture_features], dim=1)
+        else:
+            tcr_combined = torch.cat([left_g, front_g, right_g], dim=1)
+            der_combined = torch.cat([inside_g, body_g, face_g], dim=1)
+            dbr_combined = torch.cat([body_g, face_g], dim=1)
+            vbr_combined = torch.cat([left_g, front_g, right_g, inside_g, body_g, face_g], dim=1)
+
+        tcr_logits, _ = self.TCR_module(tcr_combined)   # [B, 3]
+        der_logits, _ = self.DER_module(der_combined)   # [B, 5]
+        dbr_logits, _ = self.DBR_module(dbr_combined)   # [B, 7]
+        vbr_logits, _ = self.VBR_module(vbr_combined)   # [B, 5]
+
+        tcr_node = self.norm_layer(self.tcr_proj(tcr_logits.detach()))
+        der_node = self.norm_layer(self.der_proj(der_logits.detach()))
+        dbr_node = self.norm_layer(self.dbr_proj(dbr_logits.detach()))
+        vbr_node = self.norm_layer(self.vbr_proj(vbr_logits.detach()))
+
+
+        # [B, 4, 32]
+        nodes = torch.stack([tcr_node, der_node, dbr_node, vbr_node], dim=1)
+
+        # Adjacency
+        #
+        # Convention:
+        # A[target, source]
+        #
+        # A[0, 1] = DER -> TCR
+        # A[1, 0] = TCR -> DER
+
+        A = torch.sigmoid(self.adjacency_matrix)  # [4, 4]
+
+        mask = 1.0 - torch.eye(4, device=A.device)
+
+        A = A * mask
+
+        messages = torch.einsum("ts,bsd->btd", A, nodes)
+
+        tcr_correction = self.tcr_backproj(messages[:, 0])
+        der_correction = self.der_backproj(messages[:, 1])
+        dbr_correction = self.dbr_backproj(messages[:, 2])
+        vbr_correction = self.vbr_backproj(messages[:, 3])
+
+        tcr_final = tcr_logits + tcr_correction
+        der_final = der_logits + der_correction
+        dbr_final = dbr_logits + dbr_correction
+        vbr_final = vbr_logits + vbr_correction
+
+
+        return der_final, dbr_final, tcr_final, vbr_final
