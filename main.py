@@ -318,9 +318,9 @@ def instantiate_BaselineNet():
     return BaselineNet()
 
 def instantiate_CausalNet():
-    from Models import CausalNet, CausalNetLateFusion, GRUContextCombination, FiLMContextCombination, DFEContextCombination, LSTMContextCombination
+    from Models import CausalNet, CausalNetLateFusion, FiLMContextCombination, DFEContextCombination, LSTMContextCombination
     from Models import Encoder, Resnet18Encoder, MARNetEncoder, MobileNetV3Encoder
-    return CausalNetLateFusion(context_dim=256, use_joints_data=False, alpha_blend=False, encoder=MobileNetV3Encoder, pretrained_encoder=True, freeze_encoder=True, contextCombinationModule=FiLMContextCombination)
+    return CausalNetLateFusion(context_dim=512, use_joints_data=False, alpha_blend=False, encoder=MobileNetV3Encoder, pretrained_encoder=True, freeze_encoder=True, contextCombinationModule=FiLMContextCombination)
 
 def instantiate_Resnet18EncoderNet(pretrained=True, freeze=True):
     from Models import Resnet18EncoderNet
@@ -329,6 +329,11 @@ def instantiate_Resnet18EncoderNet(pretrained=True, freeze=True):
 def instantiate_MARNetPretrainingWrapper():
     from Models import MARNetPretrainingWrapper
     return MARNetPretrainingWrapper()
+
+def instantiate_FlowNet():
+    from Models import FlowNet
+    from Models import Encoder, Resnet18Encoder, MARNetEncoder, MobileNetV3Encoder
+    return FlowNet(encoder=MobileNetV3Encoder, pretrained_encoder=True, freeze_encoder=True)
 
 if __name__ == "__main__":
     
@@ -339,7 +344,8 @@ if __name__ == "__main__":
         "baseline": instantiate_BaselineNet,
         "causalnet": instantiate_CausalNet,
         "resnet18": lambda: instantiate_Resnet18EncoderNet(pretrained=True, freeze=True),
-        "resnet18scratch": lambda: instantiate_Resnet18EncoderNet(pretrained=False, freeze=False)
+        "resnet18scratch": lambda: instantiate_Resnet18EncoderNet(pretrained=False, freeze=False),
+        "flownet": instantiate_FlowNet
     }
     
     parser = argparse.ArgumentParser()

@@ -2,7 +2,7 @@ from Models.Baseline.MARNetOnly import MARNetOnly, ConvNet3D, MARNetPretrainingW
 from Models.Baseline.MARNet import MARNet
 from Models.Baseline.Fusion import VGG, DBMEFusion
 from Models.Baseline.UniAD_MMTL import BaselineNet, Resnet18EncoderNet
-from Models.CausalNet import CausalNet, GRUContextCombination, DFEContextCombination, LSTMContextCombination, FiLMContextCombination, CrossAttentionContextCombination, CausalNetLateFusion
+from Models.CausalNet import CausalNet, GRUContextCombination, DFEContextCombination, LSTMContextCombination, FiLMContextCombination, CrossAttentionContextCombination, CausalNetLateFusion, FlowNet
 from Models.Encoders import Encoder, Resnet18Encoder, MARNetEncoder, MobileNetV3Encoder
 
 __all__ = [
@@ -24,5 +24,6 @@ __all__ = [
     'FiLMContextCombination',
     'MobileNetV3Encoder', 
     'CrossAttentionContextCombination',
-    'CausalNetLateFusion'
+    'CausalNetLateFusion',
+    'FlowNet'
     ]

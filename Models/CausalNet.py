@@ -7,7 +7,7 @@ from torch import nn
 from Models.Baseline.MARNet import MARNet
 from Models.Baseline.MARNetOnly import ConvNet3D
 
-from Models.Encoders import Encoder, Resnet18Encoder, MARNetEncoder
+from Models.Encoders import Encoder, MobileNetV3Encoder, Resnet18Encoder, MARNetEncoder
 
 
 class ContextCombinationModule(nn.Module, ABC):
@@ -278,3 +278,56 @@ class CausalNetLateFusion(CausalNet):
 
         return der_output, dbr_output, tcr_output, vbr_output
 
+class TaskSpecificNet(nn.Module):
+    def __init__(self, input_dim: int, class_num: int):
+        super().__init__()
+        self.fc = nn.Linear(input_dim, class_num)
+
+    def forward(self, x):
+        return self.fc(x)
+
+class FlowNet(nn.Module):
+    def __init__(self, encoder: Type[Encoder] = MobileNetV3Encoder, pretrained_encoder: bool = False, freeze_encoder: bool = False):
+        super().__init__()
+
+        self.encoder = encoder(pretrained=pretrained_encoder, freeze=freeze_encoder)
+                        
+        self.freeze_encoder = freeze_encoder
+
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        
+        if self.freeze_encoder:
+            for param in self.encoder.parameters():
+                param.requires_grad = False
+
+        self.tcr_net = TaskSpecificNet(input_dim=3072, class_num=3)
+        self.der_net = TaskSpecificNet(input_dim=3072, class_num=5)
+        self.dbr_net = TaskSpecificNet(input_dim=3072, class_num=7)
+        self.vbr_net = TaskSpecificNet(input_dim=3072, class_num=5)
+
+    def forward(self, inside, front, left, right, face, body, gesture, posture):
+        left_features = self.encoder(left)
+        front_features = self.encoder(front)
+        right_features = self.encoder(right)
+        inside_features = self.encoder(inside)
+        body_features = self.encoder(body)
+        face_features = self.encoder(face)
+
+        left_g = self.avg_pool(left_features).flatten(1)
+        front_g = self.avg_pool(front_features).flatten(1)
+        right_g = self.avg_pool(right_features).flatten(1)
+        inside_g = self.avg_pool(inside_features).flatten(1)
+        body_g = self.avg_pool(body_features).flatten(1)
+        face_g = self.avg_pool(face_features).flatten(1)
+
+        tcr_combined = torch.cat([left_g, front_g, right_g], dim=1)
+        der_combined = torch.cat([inside_g, body_g, face_g], dim=1)
+        dbr_combined = torch.cat([body_g, face_g], dim=1)
+        vbr_combined = torch.cat([left_g, front_g, right_g, inside_g, body_g, face_g], dim=1)
+
+        der_output = self.der_net(vbr_combined)
+        dbr_output = self.dbr_net(vbr_combined)
+        tcr_output = self.tcr_net(vbr_combined)
+        vbr_output = self.vbr_net(vbr_combined)
+
+        return der_output, dbr_output, tcr_output, vbr_output
