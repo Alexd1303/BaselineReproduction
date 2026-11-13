@@ -2,6 +2,7 @@ import argparse
 from pathlib import Path
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.optim import SGD
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
@@ -17,6 +18,29 @@ from Utils import Checkpoint, EarlyStopper, plot_confusion_matrix
 
 import cv2
 cv2.setNumThreads(0)
+
+class FocalLoss(nn.Module):
+    def __init__(self, gamma=2.0, alpha=None, reduction="mean"):
+        super(FocalLoss, self).__init__()
+        self.gamma = gamma
+        self.alpha = alpha
+        self.reduction = reduction
+
+    def forward(self, logits, targets):
+        log_probs = F.log_softmax(logits, dim=1)
+        log_pt = log_probs.gather(1, targets.unsqueeze(1)).squeeze(1)
+        pt = log_pt.exp()
+    
+        loss = -(1 - pt) ** self.gamma * log_pt
+    
+        if self.alpha is not None:
+            loss = self.alpha[targets] * loss
+    
+        if self.reduction == "mean":
+            return loss.mean()
+        elif self.reduction == "sum":
+            return loss.sum()
+        return loss
 
 def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: SequentialLR, train_dataset: CarDataset, val_dataset: CarDataset, checkpoints_dir: Path, name: str,start_epoch: int=0, num_epochs: int=10, batch_size: int=24, device: torch.device = torch.device("cpu"), num_workers: int=4):
     
@@ -40,10 +64,10 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: Sequent
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, persistent_workers=True)
     
     model.to(device)
-    lossDER = nn.CrossEntropyLoss(label_smoothing=0.1)
-    lossDBR = nn.CrossEntropyLoss(label_smoothing=0.1)
-    lossTCR = nn.CrossEntropyLoss(label_smoothing=0.1)
-    lossVBR = nn.CrossEntropyLoss(label_smoothing=0.1)
+    lossDER = FocalLoss(gamma=2.0, alpha=None, reduction="mean")
+    lossDBR = FocalLoss(gamma=2.0, alpha=None, reduction="mean")
+    lossTCR = FocalLoss(gamma=2.0, alpha=None, reduction="mean")
+    lossVBR = FocalLoss(gamma=2.0, alpha=None, reduction="mean")
     
     grad_norms = []
     
@@ -320,7 +344,7 @@ def instantiate_BaselineNet():
 def instantiate_CausalNet():
     from Models import CausalNet, CausalNetLearnedChain, CausalNetLateFusion, FiLMContextCombination, DFEContextCombination, LSTMContextCombination
     from Models import Encoder, Resnet18Encoder, MARNetEncoder, MobileNetV3Encoder
-    return CausalNetLearnedChain(context_dim=256, use_joints_data=False, alpha_blend=False, encoder=MobileNetV3Encoder, pretrained_encoder=True, freeze_encoder=True, contextCombinationModule=FiLMContextCombination)
+    return CausalNetLateFusion(context_dim=256, use_joints_data=False, alpha_blend=False, encoder=MobileNetV3Encoder, pretrained_encoder=True, freeze_encoder=True, contextCombinationModule=FiLMContextCombination)
 
 def instantiate_Resnet18EncoderNet(pretrained=True, freeze=True):
     from Models import Resnet18EncoderNet
