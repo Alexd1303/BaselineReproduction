@@ -278,6 +278,50 @@ class CausalNetLateFusion(CausalNet):
 
         return der_output, dbr_output, tcr_output, vbr_output
 
+class CausalNetLearnedChain(CausalNet):
+    def __init__(self, context_dim: int, use_joints_data: bool = True, alpha_blend: bool = False, encoder: Type[Encoder] = MARNetEncoder, pretrained_encoder: bool = False, freeze_encoder: bool = False, contextCombinationModule: Type[ContextCombinationModule] = GRUContextCombination):
+        super().__init__(context_dim, use_joints_data, alpha_blend, encoder, pretrained_encoder, freeze_encoder, contextCombinationModule)
+
+        self.multi_task_context_combination = contextCombinationModule(input_dim=context_dim, context_dim=context_dim)
+
+    def forward(self, inside, front, left, right, face, body, gesture, posture):
+        left_features = self.encoder(left)
+        front_features = self.encoder(front)
+        right_features = self.encoder(right)
+        inside_features = self.encoder(inside)
+        body_features = self.encoder(body)
+        face_features = self.encoder(face)
+
+        left_g = self.avg_pool(left_features).flatten(1)
+        front_g = self.avg_pool(front_features).flatten(1)
+        right_g = self.avg_pool(right_features).flatten(1)
+        inside_g = self.avg_pool(inside_features).flatten(1)
+        body_g = self.avg_pool(body_features).flatten(1)
+        face_g = self.avg_pool(face_features).flatten(1)
+        
+        if self.use_joints_data:
+            gesture_features = self.gesture_conv3d(gesture)
+            posture_features = self.posture_conv3d(posture)
+            tcr_combined = torch.cat([left_g, front_g, right_g], dim=1)
+            der_combined = torch.cat([inside_g, body_g, face_g, gesture_features, posture_features], dim=1)
+            dbr_combined = torch.cat([body_g, face_g, gesture_features, posture_features], dim=1)
+            vbr_combined = torch.cat([left_g, front_g, right_g, inside_g, body_g, face_g, gesture_features, posture_features], dim=1)
+        else:
+            tcr_combined = torch.cat([left_g, front_g, right_g], dim=1)
+            der_combined = torch.cat([inside_g, body_g, face_g], dim=1)
+            dbr_combined = torch.cat([body_g, face_g], dim=1)
+            vbr_combined = torch.cat([left_g, front_g, right_g, inside_g, body_g, face_g], dim=1)
+
+        vbr_output, vbr_context = self.VBR_module(vbr_combined)
+        dbr_output, dbr_context = self.DBR_module(dbr_combined, context_embedding=vbr_context)
+        der_output, der_context = self.DER_module(der_combined, context_embedding=dbr_context)
+
+        vbr_dbr_context = self.multi_task_context_combination(dbr_context, embedding=vbr_context)
+
+        tcr_output, tcr_context = self.TCR_module(tcr_combined, context_embedding=vbr_dbr_context)
+        
+        return der_output, dbr_output, tcr_output, vbr_output
+
 class TaskSpecificNet(nn.Module):
     def __init__(self, input_dim: int, class_num: int):
         super().__init__()

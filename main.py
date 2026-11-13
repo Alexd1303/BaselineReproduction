@@ -318,9 +318,9 @@ def instantiate_BaselineNet():
     return BaselineNet()
 
 def instantiate_CausalNet():
-    from Models import CausalNet, CausalNetLateFusion, FiLMContextCombination, DFEContextCombination, LSTMContextCombination
+    from Models import CausalNet, CausalNetLearnedChain, CausalNetLateFusion, FiLMContextCombination, DFEContextCombination, LSTMContextCombination
     from Models import Encoder, Resnet18Encoder, MARNetEncoder, MobileNetV3Encoder
-    return CausalNetLateFusion(context_dim=512, use_joints_data=False, alpha_blend=False, encoder=MobileNetV3Encoder, pretrained_encoder=True, freeze_encoder=True, contextCombinationModule=FiLMContextCombination)
+    return CausalNetLearnedChain(context_dim=256, use_joints_data=False, alpha_blend=False, encoder=MobileNetV3Encoder, pretrained_encoder=True, freeze_encoder=True, contextCombinationModule=FiLMContextCombination)
 
 def instantiate_Resnet18EncoderNet(pretrained=True, freeze=True):
     from Models import Resnet18EncoderNet
